@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aero Xperience: Aviation in Action</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --sky:#0b1a33;
+    --sky2:#132849;
+    --ink:#0b1a33;
+    --paper:#f6f1e7;
+    --amber:#ffb627;
+    --coral:#ff6b4a;
+    --mint:#5fd4b0;
+    --mute:#8fa0bd;
+    --line:rgba(255,255,255,.12);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:'Bricolage Grotesque',system-ui,sans-serif;background:var(--paper);color:var(--ink);line-height:1.55;font-size:17px}
+  .mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+  a{color:inherit}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+
+  /* NAV */
+  nav{position:sticky;top:0;z-index:20;background:rgba(11,26,51,.92);backdrop-filter:blur(8px);color:#fff;border-bottom:1px solid var(--line)}
+  nav .wrap{display:flex;align-items:center;justify-content:space-between;height:60px;gap:16px}
+  .logo{font-weight:800;letter-spacing:-.02em;font-size:20px;display:flex;align-items:center;gap:8px;text-decoration:none}
+  .logo svg{width:26px;height:26px}
+  .logo span{color:var(--amber)}
+  nav ul{display:flex;gap:22px;list-style:none;font-size:14px}
+  nav ul a{text-decoration:none;opacity:.8}
+  nav ul a:hover{opacity:1;color:var(--amber)}
+  @media(max-width:760px){nav ul{display:none}}
+
+  /* HERO */
+  .hero{background:radial-gradient(1200px 500px at 80% -10%,#24427a 0%,transparent 60%),linear-gradient(180deg,var(--sky) 0%,var(--sky2) 100%);color:#fff;position:relative;overflow:hidden;padding:72px 0 120px}
+  .hero::after{content:"";position:absolute;left:0;right:0;bottom:44px;height:6px;background:repeating-linear-gradient(90deg,var(--amber) 0 40px,transparent 40px 80px);opacity:.75}
+  .hero .grid{display:grid;grid-template-columns:1.15fr .85fr;gap:48px;align-items:center}
+  @media(max-width:900px){.hero .grid{grid-template-columns:1fr}}
+  .status{display:inline-flex;align-items:center;gap:10px;font-size:13px;letter-spacing:.08em;text-transform:uppercase;background:rgba(255,255,255,.08);border:1px solid var(--line);padding:6px 12px;border-radius:999px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--mint);box-shadow:0 0 0 0 rgba(95,212,176,.7);animation:pulse 1.8s infinite}
+  @keyframes pulse{70%{box-shadow:0 0 0 10px rgba(95,212,176,0)}100%{box-shadow:0 0 0 0 rgba(95,212,176,0)}}
+  h1{font-size:clamp(44px,7vw,84px);line-height:.95;letter-spacing:-.035em;font-weight:800;margin:22px 0 18px}
+  h1 em{font-style:normal;color:var(--amber)}
+  .lede{font-size:20px;max-width:540px;color:#d6deec}
+  .cta{display:flex;gap:12px;flex-wrap:wrap;margin-top:30px}
+  .btn{display:inline-block;padding:14px 22px;border-radius:10px;font-weight:600;text-decoration:none;font-size:16px;transition:transform .15s}
+  .btn:hover{transform:translateY(-2px)}
+  .btn.primary{background:var(--amber);color:var(--ink)}
+  .btn.ghost{border:1.5px solid rgba(255,255,255,.35);color:#fff}
+
+  /* boarding pass */
+  .pass{background:var(--paper);color:var(--ink);border-radius:18px;overflow:hidden;box-shadow:0 30px 60px rgba(0,0,0,.35);transform:rotate(2deg)}
+  .pass-top{background:var(--coral);color:#fff;padding:14px 22px;display:flex;justify-content:space-between;font-size:12px;letter-spacing:.12em;text-transform:uppercase;font-weight:600}
+  .pass-body{padding:22px;display:grid;grid-template-columns:1fr 1fr;gap:18px 14px;position:relative}
+  .pass-route{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .pass-route b{font-size:44px;letter-spacing:-.03em;line-height:1}
+  .pass-route small{display:block;font-size:11px;color:#5b6780;letter-spacing:.06em;text-transform:uppercase}
+  .pass-route .plane{flex:1;border-top:2px dashed #c3c9d5;position:relative;height:0}
+  .pass-route .plane svg{position:absolute;left:50%;top:-13px;transform:translateX(-50%);width:26px;height:26px;background:var(--paper);padding:0 2px}
+  .field small{display:block;font-size:10.5px;color:#5b6780;letter-spacing:.1em;text-transform:uppercase}
+  .field div{font-weight:600;font-size:15px}
+  .pass-tear{border-top:2px dashed #c3c9d5;margin:0 22px;position:relative}
+  .pass-tear::before,.pass-tear::after{content:"";position:absolute;top:-12px;width:22px;height:22px;border-radius:50%;background:var(--sky2)}
+  .pass-tear::before{left:-34px}.pass-tear::after{right:-34px}
+  .barcode{padding:16px 22px 20px;display:flex;gap:2px;height:70px;align-items:stretch}
+  .barcode i{background:var(--ink);display:block}
+
+  /* SECTIONS */
+  section{padding:88px 0}
+  .eyebrow{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--coral);font-weight:600;margin-bottom:12px}
+  h2{font-size:clamp(32px,4.5vw,50px);line-height:1.02;letter-spacing:-.03em;font-weight:800;margin-bottom:18px;max-width:780px}
+  .sub{font-size:19px;max-width:680px;color:#3c4a63}
+
+  /* about */
+  .about-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:56px;align-items:start;margin-top:10px}
+  @media(max-width:860px){.about-grid{grid-template-columns:1fr}}
+  .about-grid p{margin-bottom:16px;font-size:18px}
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .stat{background:#fff;border:1px solid #e3dccd;border-radius:14px;padding:22px}
+  .stat b{display:block;font-size:42px;letter-spacing:-.03em;line-height:1;margin-bottom:6px}
+  .stat:nth-child(1) b{color:var(--coral)}
+  .stat:nth-child(2) b{color:#2a62c9}
+  .stat:nth-child(3) b{color:#1d9c78}
+  .stat:nth-child(4) b{color:#c98400}
+  .stat span{font-size:14px;color:#55617a}
+
+  /* activities */
+  .dark{background:var(--sky);color:#fff}
+  .dark .sub{color:#b9c5da}
+  .acts{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:40px}
+  @media(max-width:900px){.acts{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.acts{grid-template-columns:1fr}}
+  .act{background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:16px;padding:24px;transition:background .2s,border-color .2s}
+  .act:hover{background:rgba(255,255,255,.08);border-color:rgba(255,182,39,.5)}
+  .act .num{font-size:12px;color:var(--amber);letter-spacing:.1em}
+  .act h3{font-size:21px;letter-spacing:-.01em;margin:10px 0 8px}
+  .act p{color:#b9c5da;font-size:15.5px}
+  .act svg{width:34px;height:34px;margin-top:4px;color:var(--amber)}
+
+  /* careers board */
+  .board{background:#111;border-radius:14px;padding:20px;margin-top:40px;color:#ffd36b;overflow-x:auto;box-shadow:inset 0 0 0 6px #1d1d1d}
+  .board table{width:100%;border-collapse:collapse;min-width:620px;font-size:15px}
+  .board th{text-align:left;color:#9a9a9a;font-weight:400;font-size:12px;letter-spacing:.12em;padding:8px 12px;border-bottom:1px solid #2a2a2a}
+  .board td{padding:13px 12px;border-bottom:1px solid #222;white-space:nowrap}
+  .board td:first-child{color:#fff}
+  .board .tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600}
+  .tag.fly{background:#2a62c9;color:#fff}
+  .tag.ground{background:#1d9c78;color:#fff}
+  .board td.status-cell{color:var(--mint)}
+
+  /* timeline */
+  .stops{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:40px}
+  @media(max-width:900px){.stops{grid-template-columns:1fr}}
+  .stop{background:#fff;border:1px solid #e3dccd;border-radius:16px;padding:26px;position:relative}
+  .stop.now{border:2px solid var(--coral);box-shadow:0 14px 30px rgba(255,107,74,.15)}
+  .badge{display:inline-block;font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;padding:4px 10px;border-radius:999px;margin-bottom:14px}
+  .badge.past{background:#e7e3da;color:#55617a}
+  .badge.live{background:var(--coral);color:#fff}
+  .badge.next{background:#dce7fb;color:#2a62c9}
+  .stop h3{font-size:24px;letter-spacing:-.02em;margin-bottom:4px}
+  .stop .when{font-size:14px;color:#55617a;margin-bottom:14px}
+  .stop p{font-size:16px;color:#3c4a63}
+  .stop ul{margin:12px 0 0 18px;font-size:15px;color:#3c4a63}
+
+  /* who */
+  .who{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:36px}
+  @media(max-width:860px){.who{grid-template-columns:1fr 1fr}}
+  .who div{border-top:3px solid var(--ink);padding-top:14px}
+  .who h4{font-size:19px;margin-bottom:6px}
+  .who p{font-size:15px;color:#3c4a63}
+
+  /* involve */
+  .involve{background:var(--amber)}
+  .inv-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:36px}
+  @media(max-width:860px){.inv-grid{grid-template-columns:1fr}}
+  .inv{background:var(--paper);border-radius:16px;padding:26px;display:flex;flex-direction:column;gap:10px}
+  .inv h3{font-size:22px;letter-spacing:-.02em}
+  .inv p{font-size:15.5px;color:#3c4a63;flex:1}
+  .inv a{font-weight:600;text-decoration:none;border-bottom:2px solid var(--ink);align-self:flex-start}
+
+  /* faq */
+  details{border-bottom:1px solid #d9d2c3;padding:20px 0}
+  details:first-of-type{border-top:1px solid #d9d2c3;margin-top:30px}
+  summary{cursor:pointer;font-size:20px;font-weight:600;list-style:none;display:flex;justify-content:space-between;gap:20px}
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:"+";font-size:26px;line-height:1;color:var(--coral);transition:transform .2s}
+  details[open] summary::after{transform:rotate(45deg)}
+  details p{margin-top:12px;font-size:16.5px;color:#3c4a63;max-width:760px}
+
+  footer{background:var(--sky);color:#b9c5da;padding:56px 0 40px;font-size:15px}
+  footer .fgrid{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:30px}
+  @media(max-width:760px){footer .fgrid{grid-template-columns:1fr}}
+  footer h5{color:#fff;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:12px}
+  footer a{color:#fff}
+  .note{margin-top:40px;padding-top:22px;border-top:1px solid var(--line);font-size:13px;color:var(--mute)}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a href="#top" class="logo">
+      <svg viewBox="0 0 24 24" fill="#ffb627"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>
+      Aero<span>Xperience</span>
+    </a>
+    <ul>
+      <li><a href="#about">About</a></li>
+      <li><a href="#activities">Activities</a></li>
+      <li><a href="#careers">Careers</a></li>
+      <li><a href="#events">Events</a></li>
+      <li><a href="#involved">Get Involved</a></li>
+      <li><a href="#faq">FAQ</a></li>
+    </ul>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap grid">
+    <div>
+      <div class="status mono"><span class="dot"></span><span id="statusText">Durham: Oct 31, 2026</span></div>
+      <h1>Aviation<br>in <em>Action.</em></h1>
+      <p class="lede">Aero Xperience is a hands-on aviation day for middle and high school students. Fly a simulator, race a drone, build something, and talk with the people who keep planes in the air.</p>
+      <div class="cta">
+        <a class="btn primary" href="https://www.blackwomeninaviation.com/aero-xperience" target="_blank" rel="noopener">Register on the official page</a>
+        <a class="btn ghost" href="#activities">See what you'll do</a>
+      </div>
+    </div>
+
+    <div class="pass" aria-label="Event details styled as a boarding pass">
+      <div class="pass-top mono"><span>Boarding Pass</span><span>Aero Xperience</span></div>
+      <div class="pass-body">
+        <div class="pass-route">
+          <div><small>From</small><b class="mono">YOU</b></div>
+          <div class="plane"><svg viewBox="0 0 24 24" fill="#ff6b4a"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" transform="rotate(90 12 12)"/></svg></div>
+          <div style="text-align:right"><small>To</small><b class="mono">RDU</b></div>
+        </div>
+        <div class="field"><small>Date</small><div>Sat, Oct 31, 2026</div></div>
+        <div class="field"><small>Time</small><div>8:00 AM to 8:00 PM</div></div>
+        <div class="field" style="grid-column:1/-1"><small>Gate</small><div>Expo Center<br><span style="font-weight:400;font-size:14px">Durham, NC</span></div></div>
+        <div class="field"><small>Passengers</small><div>1,000+ students</div></div>
+        <div class="field"><small>Class</small><div>Grades 6 to 12</div></div>
+      </div>
+      <div class="pass-tear"></div>
+      <div class="barcode" id="barcode" aria-hidden="true"></div>
+    </div>
+  </div>
+</header>
+
+<section id="about">
+  <div class="wrap">
+    <div class="eyebrow">About the program</div>
+    <h2>Opening the hangar doors for students who never knew they could walk in.</h2>
+    <div class="about-grid">
+      <div>
+        <p>Aero Xperience is a program run by <strong>Black Women in Aviation</strong>, a nonprofit. It brings aviation straight to students in North Carolina and Delaware, so they can see the jobs up close instead of just reading about them.</p>
+        <p>The idea is simple. A lot of kids think aviation means one job: pilot. In reality there are mechanics, engineers, dispatchers, drone operators, and many more roles on the ground and in the air. Aero Xperience puts students in the same room as those people and lets them try the work for themselves.</p>
+        <p>The program's motto sums it up: <em>Expanding Access. Inspiring Futures. Building the Next Generation of Aviators.</em></p>
+      </div>
+      <div class="stats">
+        <div class="stat"><b>1,000+</b><span>students expected at Durham 2026</span></div>
+        <div class="stat"><b>2</b><span>states: North Carolina and Delaware</span></div>
+        <div class="stat"><b>6 to 12</b><span>grades the program is built for</span></div>
+        <div class="stat"><b>12 hrs</b><span>of activities at the Durham event</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="dark" id="activities">
+  <div class="wrap">
+    <div class="eyebrow" style="color:var(--amber)">What you'll do</div>
+    <h2>Less sitting. More flying, building, and asking questions.</h2>
+    <p class="sub">Every station is hands-on. Here's what's on the floor.</p>
+    <div class="acts">
+      <div class="act">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="6" width="20" height="12" rx="3"/><path d="M8 10v4M6 12h4M15 11h.01M18 13h.01"/></svg>
+        <div class="num mono">01</div>
+        <h3>Flight Simulators</h3>
+        <p>Take the controls in a sim and get a feel for takeoff, turns, and landing.</p>
+      </div>
+      <div class="act">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5" cy="5" r="2.5"/><circle cx="19" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M7 7l2 2M17 7l-2 2M7 17l2-2M17 17l-2-2"/></svg>
+        <div class="num mono">02</div>
+        <h3>Drone Obstacle Course</h3>
+        <p>Pilot a drone through a course and see how drone operators work.</p>
+      </div>
+      <div class="act">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9h18v7a2 2 0 0 1-2 2h-3l-2-3h-4l-2 3H5a2 2 0 0 1-2-2z"/><path d="M7 9V7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2"/></svg>
+        <div class="num mono">03</div>
+        <h3>VR &amp; Gaming Labs</h3>
+        <p>Use virtual reality and simulation games to explore aviation in new ways.</p>
+      </div>
+      <div class="act">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg>
+        <div class="num mono">04</div>
+        <h3>STEM Build Stations</h3>
+        <p>Engineering challenges where you design and build, then test what works.</p>
+      </div>
+      <div class="act">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="8" width="14" height="10" rx="2"/><path d="M12 4v4M9 13h.01M15 13h.01M3 13h2M19 13h2"/></svg>
+        <div class="num mono">05</div>
+        <h3>Robotics</h3>
+        <p>See how robots and automation fit into building and maintaining aircraft.</p>
+      </div>
+      <div class="act">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>
+        <div class="num mono">06</div>
+        <h3>Aircraft Displays</h3>
+        <p>Get close to real aircraft and live industry demos.</p>
+      </div>
+      <div class="act">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>
+        <div class="num mono">07</div>
+        <h3>Career Conversations</h3>
+        <p>Q&amp;A with pilots, mechanics, engineers, and others about how they got their jobs.</p>
+      </div>
+      <div class="act">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 10l9-6 9 6-9 6z"/><path d="M7 12.5V17c0 1 2.2 2.5 5 2.5s5-1.5 5-2.5v-4.5"/></svg>
+        <div class="num mono">08</div>
+        <h3>NC Training Schools</h3>
+        <p>Meet reps from North Carolina training programs and learn the path after high school.</p>
+      </div>
+      <div class="act">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="5" r="2.5"/><path d="M12 8v7M8 11l4-2 4 2M9 22l3-7 3 7"/></svg>
+        <div class="num mono">09</div>
+        <h3>Interactive Human Statues</h3>
+        <p>Living displays that bring aviation history and role models to life.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="careers">
+  <div class="wrap">
+    <div class="eyebrow">Careers on the board</div>
+    <h2>Pilot is one job. Here are some of the others.</h2>
+    <p class="sub">At Aero Xperience, students talk with pilots, mechanics, engineers, dispatchers, and drone operators. Here are those jobs plus a few more worth knowing about. Some fly. Most don't.</p>
+    <div class="board mono">
+      <table>
+        <thead><tr><th>ROLE</th><th>TYPE</th><th>WHAT THEY DO</th><th>STATUS</th></tr></thead>
+        <tbody id="boardBody"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="events" style="padding-top:0">
+  <div class="wrap">
+    <div class="eyebrow">Event stops</div>
+    <h2>Where Aero Xperience has been, and where it's going.</h2>
+    <div class="stops">
+      <div class="stop">
+        <span class="badge past mono">Completed</span>
+        <h3>Wake County, NC</h3>
+        <div class="when mono">The first event</div>
+        <p>The first Aero Xperience reached hundreds of students. It had STEM challenges, gaming labs, aircraft exploration, and mentoring. The organizers say teachers, parents, and industry partners all gave strong feedback.</p>
+      </div>
+      <div class="stop now">
+        <span class="badge live mono" id="cltBadge">Today</span>
+        <h3>Durham, NC</h3>
+        <div class="when mono">Sat, Oct 31, 2026 · 8 AM to 8 PM</div>
+        <p>A statewide aviation celebration at the Expo Center in Durham.</p>
+        <ul>
+          <li>Expected to reach 1,000+ students</li>
+          <li>Open to middle and high school students</li>
+        </ul>
+      </div>
+      <div class="stop">
+        <span class="badge next mono">Coming up</span>
+        <h3>Delaware</h3>
+        <div class="when mono">Planned for March 2027</div>
+        <p>The next stop is in the works. Location and details have not been announced yet. Join the mailing list on the official page to get updates.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section style="padding-top:0">
+  <div class="wrap">
+    <div class="eyebrow">Who it's for</div>
+    <h2>Built for students. Open to everyone who supports them.</h2>
+    <div class="who">
+      <div><h4>Students</h4><p>Middle and high schoolers curious about planes, drones, engineering, or just trying something new.</p></div>
+      <div><h4>Educators</h4><p>Teachers and counselors looking for real career exposure to bring back to class.</p></div>
+      <div><h4>Parents</h4><p>Families who want to see the paths open to their kids after high school.</p></div>
+      <div><h4>Community</h4><p>Local leaders and organizations who want more young people in aviation.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="involve" id="involved">
+  <div class="wrap">
+    <div class="eyebrow" style="color:var(--ink)">Get involved</div>
+    <h2>Help put more students in the cockpit, the hangar, and the tower.</h2>
+    <div class="inv-grid">
+      <div class="inv">
+        <h3>Register</h3>
+        <p>Sign up for an upcoming Aero Xperience through the Black Women in Aviation events page.</p>
+        <a href="https://www.blackwomeninaviation.com/aero-xperience" target="_blank" rel="noopener">Go to official page →</a>
+      </div>
+      <div class="inv">
+        <h3>Partner or Volunteer</h3>
+        <p>Schools, sponsors, aviation professionals, and community groups can all take part. Reach out to the organizers.</p>
+        <a href="https://www.blackwomeninaviation.com/aero-xperience" target="_blank" rel="noopener">Contact the organizers →</a>
+      </div>
+      <div class="inv">
+        <h3>Donate</h3>
+        <p>Black Women in Aviation is a registered nonprofit. Donations help bring the program to more students.</p>
+        <a href="https://www.blackwomeninaviation.com/aero-xperience" target="_blank" rel="noopener">Learn how to give →</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <div class="eyebrow">FAQ</div>
+    <h2>Quick answers.</h2>
+    <details>
+      <summary>Who runs Aero Xperience?</summary>
+      <p>Black Women in Aviation, a nonprofit that works to open aviation careers to more people. Its founder, Samantha Mitchell, was the first female maintenance technician at JFK International Airport.</p>
+    </details>
+    <details>
+      <summary>Do I need to know anything about aviation to go?</summary>
+      <p>No. The whole point is to give students a first look. Every station is hands-on and built for beginners.</p>
+    </details>
+    <details>
+      <summary>Where is the 2026 event?</summary>
+      <p>At the Expo Center in Durham, NC, on Saturday, October 31, 2026, from 8 AM to 8 PM. Check the official page for registration details.</p>
+    </details>
+    <details>
+      <summary>Is it only about becoming a pilot?</summary>
+      <p>Not at all. Students meet mechanics, engineers, dispatchers, drone operators, and other workers. Many great aviation jobs never leave the ground.</p>
+    </details>
+    <details>
+      <summary>How do I find out about the Delaware event?</summary>
+      <p>Join the mailing list on the official Aero Xperience page. Delaware is planned for March 2027, and details will be shared there first.</p>
+    </details>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="fgrid">
+      <div>
+        <div class="logo" style="color:#fff;margin-bottom:12px">Aero<span>Xperience</span></div>
+        <p>A hands-on aviation program for middle and high school students in North Carolina and Delaware.</p>
+      </div>
+      <div>
+        <h5>Organizer</h5>
+        <p>Black Women in Aviation<br>Email: info@blackwomeninaviation.com</p>
+      </div>
+      <div>
+        <h5>Official info</h5>
+        <p><a href="https://www.blackwomeninaviation.com/aero-xperience" target="_blank" rel="noopener">blackwomeninaviation.com/aero-xperience</a></p>
+      </div>
+    </div>
+    <p class="note">This is a student-made informational website about Aero Xperience. It is not the official site and is not run by Black Women in Aviation. For registration, current details, and anything official, please visit the organizer's website.</p>
+  </div>
+</footer>
+
+<script>
+  // barcode
+  (function(){
+    var bc=document.getElementById('barcode');
+    var seed=7;
+    function r(){seed=(seed*9301+49297)%233280;return seed/233280;}
+    for(var i=0;i<64;i++){
+      var b=document.createElement('i');
+      b.style.width=(1+Math.floor(r()*4))+'px';
+      b.style.opacity=r()>.15?1:0;
+      bc.appendChild(b);
+    }
+  })();
+
+  // careers board
+  (function(){
+    var rows=[
+      ['Pilot','fly','Flies the aircraft and leads the crew'],
+      ['Aircraft Mechanic','ground','Inspects and repairs planes so they are safe to fly'],
+      ['Aerospace Engineer','ground','Designs aircraft, engines, and systems'],
+      ['Flight Dispatcher','ground','Plans routes, fuel, and weather for each flight'],
+      ['Drone Operator','fly','Flies drones for mapping, inspection, and delivery'],
+      ['Air Traffic Controller','ground','Keeps aircraft safely spaced in the air and on the ground'],
+      ['Flight Attendant','fly','Keeps passengers safe and handles the cabin'],
+      ['Airport Operations','ground','Runs the runways, gates, and ground crews']
+    ];
+    var st=['ON TIME','BOARDING','NOW HIRING','ON TIME','NOW HIRING','BOARDING','ON TIME','NOW HIRING'];
+    var tb=document.getElementById('boardBody');
+    rows.forEach(function(r,i){
+      var tr=document.createElement('tr');
+      tr.innerHTML='<td>'+r[0].toUpperCase()+'</td><td><span class="tag '+r[1]+'">'+(r[1]==='fly'?'IN THE AIR':'ON THE GROUND')+'</span></td><td>'+r[2]+'</td><td class="status-cell">'+st[i]+'</td>';
+      tb.appendChild(tr);
+    });
+  })();
+
+  // live status based on date
+  (function(){
+    var now=new Date();
+    var y=now.getFullYear(),m=now.getMonth(),d=now.getDate();
+    var txt=document.getElementById('statusText');
+    var badge=document.getElementById('cltBadge');
+    var ev=new Date(2026,9,31);
+    var today=new Date(y,m,d);
+    if(today.getTime()===ev.getTime()){
+      txt.textContent='Happening today in Durham';
+      badge.textContent='Today';
+    } else if(today<ev){
+      var days=Math.round((ev-today)/86400000);
+      txt.textContent=days===1?'Tomorrow in Durham':days+' days until Durham';
+      badge.textContent=days===1?'Tomorrow':'Upcoming';
+    } else {
+      txt.textContent='Next stop: Delaware, March 2027';
+      badge.textContent='Completed';
+      badge.className='badge past mono';
+    }
+  })();
+</script>
+</body>
+</html>
