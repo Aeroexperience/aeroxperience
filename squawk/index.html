@@ -454,12 +454,14 @@ function wxKey(schema){const props=Object.keys((schema&&schema.properties)||{});
 async function liveMetar(icao,force){
   icao=String(icao||'').toUpperCase();if(!/^[A-Z0-9]{3,4}$/.test(icao))return null;
   const c=WXCACHE[icao];if(c&&!force&&Date.now()-c.at<15*60e3)return c;
-  // 1. Straight from aviationweather.gov (works when the page is hosted outside Claude)
-  try{
-    const ctl=new AbortController();const tm=setTimeout(()=>ctl.abort(),6000);
-    const r=await fetch('https://aviationweather.gov/api/data/metar?ids='+icao+'&format=raw',{signal:ctl.signal});clearTimeout(tm);
-    const m=findMetar(await r.text(),icao);if(m)return WXCACHE[icao]={metar:m,src:'aviationweather.gov',at:Date.now()};
-  }catch(e){}
+  // 1. Real METAR text from the web (works when the page is hosted outside Claude)
+  for(const [src,url] of [['VATSIM','https://metar.vatsim.net/'+icao],['aviationweather.gov','https://aviationweather.gov/api/data/metar?ids='+icao+'&format=raw']]){
+    try{
+      const ctl=new AbortController();const tm=setTimeout(()=>ctl.abort(),6000);
+      const r=await fetch(url,{signal:ctl.signal});clearTimeout(tm);
+      const m=findMetar(await r.text(),icao);if(m)return WXCACHE[icao]={metar:m,src,at:Date.now()};
+    }catch(e){}
+  }
   // 2. Through the Airfield Directory connector (works on the Claude page)
   if(CAP.mcp){
     const call=async input=>{const r=await CAP.mcp.callTool(WX_SERVER,WX_TOOL,input,force?{cache:{refresh:true,staleTime:600000,gcTime:1800000}}:{cache:{staleTime:600000,gcTime:1800000}});
@@ -489,7 +491,7 @@ async function refreshWx(side,force){
   return r;
 }
 function wxWhy(){
-  return {no_mcp:'',server_not_connected:'Connect Airfield Directory in claude.ai Settings, Connectors to get live weather here.',needs_reauth:'Reconnect Airfield Directory in claude.ai Settings, Connectors.',not_in_manifest:'Weather access was turned off for this page.',approval_required:'Allow Airfield Directory when Claude asks, then tap Refresh weather.',no_metar:'Airfield Directory had no METAR for this airport.'}[WXERR]||'';
+  return {no_mcp:'Couldn\'t reach any weather service. Check your internet connection, then tap Refresh weather.',server_not_connected:'Connect Airfield Directory in claude.ai Settings, Connectors to get live weather here.',needs_reauth:'Reconnect Airfield Directory in claude.ai Settings, Connectors.',not_in_manifest:'Weather access was turned off for this page.',approval_required:'Allow Airfield Directory when Claude asks, then tap Refresh weather.',no_metar:'Airfield Directory had no METAR for this airport.'}[WXERR]||'';
 }
 
 /* ================= phrase pieces ================= */
@@ -812,9 +814,16 @@ function brg(a,b){const t=Math.PI/180;const y=Math.sin((b.lon-a.lon)*t)*Math.cos
 function angDiff(a,b){let d=Math.abs(a-b)%360;return d>180?360-d:d;}
 async function fetchOsmAirport(icao){
   const q=`[out:json][timeout:25];(way["aeroway"="aerodrome"]["icao"="${icao}"];relation["aeroway"="aerodrome"]["icao"="${icao}"];)->.ap;.ap map_to_area->.a;(way["aeroway"~"^(taxiway|runway|taxilane)$"](area.a);node["aeroway"~"^(parking_position|gate)$"](area.a);way["aeroway"="parking_position"](area.a););out body;>;out skel qt;`;
-  const ctl=new AbortController();const tm=setTimeout(()=>ctl.abort(),20000);
-  try{const r=await fetch('https://overpass-api.de/api/interpreter',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q),signal:ctl.signal});return await r.json();}
-  finally{clearTimeout(tm);}
+  const servers=['https://overpass-api.de/api/interpreter','https://overpass.private.coffee/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
+  let last='';
+  for(const url of servers){
+    const ctl=new AbortController();const tm=setTimeout(()=>ctl.abort(),20000);
+    try{const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q),signal:ctl.signal});
+      if(!r.ok){last='HTTP '+r.status;continue;}const j=await r.json();if(j&&j.elements)return j;last='bad data';}
+    catch(e){last=e.name==='AbortError'?'timeout':'blocked';}
+    finally{clearTimeout(tm);}
+  }
+  throw new Error(last);
 }
 function buildTaxiGraph(osm){
   const N=new Map(),adj=new Map(),rwyOf=new Map(),runways=[],parking=[];
@@ -908,13 +917,20 @@ function planArrivalTaxi(G,rw,parkRef,heavy){
   if(park){const goal=nearestTaxiNode(G,park,id=>!G.rwyOf.has(id));const path=taxiPath(G,best.off,[goal],null);if(path){const pcs=routePieces(G,path,null);if(pcs[0]&&pcs[0].twy===best.name&&pcs.length>1)pcs.shift();steps=stepsFrom(pcs);}}
   return{exit:best.name,turn,steps,to:park?park.ref:''};
 }
-async function loadTaxi(side){
+// Saved maps live in the browser's IndexedDB so each airport downloads once.
+function idb(){return new Promise((res,rej)=>{try{const r=indexedDB.open('squawk',1);r.onupgradeneeded=()=>r.result.createObjectStore('osm');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);}catch(e){rej(e);}});}
+async function osmCacheGet(icao){try{const db=await idb();return await new Promise(res=>{const q=db.transaction('osm').objectStore('osm').get(icao);q.onsuccess=()=>res(q.result||null);q.onerror=()=>res(null);});}catch(e){return null;}}
+async function osmCachePut(icao,data){try{const db=await idb();db.transaction('osm','readwrite').objectStore('osm').put({at:Date.now(),data},icao);}catch(e){}}
+async function loadTaxi(side,force){
   const ap=S.plan[side];TAXI.status[side]='Loading real taxiways...';
   try{
-    const osm=await fetchOsmAirport(ap.icao);const G=buildTaxiGraph(osm);
+    let osm=null;const c=force?null:await osmCacheGet(ap.icao);
+    if(c&&Date.now()-c.at<60*86400e3)osm=c.data;
+    else{osm=await fetchOsmAirport(ap.icao);if(osm&&osm.elements&&osm.elements.length)osmCachePut(ap.icao,osm);}
+    const G=buildTaxiGraph(osm);
     if(G.adj.size<20){TAXI[side]=null;TAXI.status[side]='OpenStreetMap has no taxiway map for '+ap.icao+'.';return;}
     TAXI[side]=G;TAXI.status[side]=`Real taxiways loaded (${G.parking.length} gates and stands).`;
-  }catch(e){TAXI[side]=null;TAXI.status[side]='Real taxiways need the hosted version of Squawk (this page can\'t reach the map data).';}
+  }catch(e){TAXI[side]=null;TAXI.status[side]=/claude/.test(location.hostname)||location.protocol==='file:'?'Real taxiways need the GitHub version of Squawk.':`Couldn't reach the OpenStreetMap servers (${e.message}). Some school or work Wi-Fi blocks them. Try another network, then tap Retry.`;}
 }
 function P_twys(list){return{t:list.join(', '),s:list.map(x=>digitsW(x)).join(', ')};}
 
@@ -1467,7 +1483,7 @@ function renderReview(){
   ${(!p.dep.known&&p.src!=='SimBrief')||(!p.arr.known&&p.src!=='SimBrief')?`<p class="err" style="margin-top:8px">I don't know what ATC calls ${[(!p.dep.known?p.dep.icao:''),(!p.arr.known?p.arr.icao:'')].filter(Boolean).join(' or ')}. Type the city or airport name above so it doesn't get spelled out.</p>`:''}
   <label style="margin-top:10px">Voice models</label><div id="vmStatus" class="muted"></div>
   <button id="vmGet" class="hidden" style="margin-top:6px">Download voice models</button>
-  <label style="margin-top:10px">Taxi routes</label><div id="taxiStatus" class="muted">Checking for real taxiway maps...</div>
+  <div class="row" style="align-items:flex-end;margin-top:10px"><div><label style="margin:0">Taxi routes</label><div id="taxiStatus" class="muted">Checking for real taxiway maps...</div></div><button id="taxiRetry" style="flex:none">Retry</button></div>
   <div class="grid" id="parkRow"></div>
   <div class="row" style="align-items:flex-end;margin-top:10px"><div><label style="margin:0">Live weather</label><div id="wxStatus" class="muted">${wxStatus()}</div></div><button id="wxRefresh" style="flex:none">Refresh weather</button></div>
   <label>${esc(p.dep.icao)} METAR</label><input data-p="dep.metar" value="${esc(p.dep.metar)}" placeholder="Loading live weather...">
@@ -1480,6 +1496,7 @@ function renderReview(){
     if(b==='call'&&old&&v){const keys=a==='dep'?['clr','gnd','twr','dep','datis']:['app','atwr','agnd','aatis'];for(const k of keys){const f=S.fac[k];if(f.name.startsWith(old)){f.name=v+f.name.slice(old.length);const el=$('rv').querySelector(`[data-f="${k}.name"]`);if(el)el.value=f.name;}}S.plan[a].known=true;}};
   for(const i of $('rv').querySelectorAll('[data-f]'))i.oninput=()=>{const [a,b]=i.dataset.f.split('.');S.fac[a][b]=b==='freq'?i.value.trim():i.value;S.fac[a].est=false;};
   $('wxRefresh').onclick=()=>loadReviewWx(true);
+  $('taxiRetry').onclick=()=>{$('taxiStatus').textContent='Loading real taxiways...';Promise.all([loadTaxi('dep',true),loadTaxi('arr',true)]).then(renderTaxiReview);};
   renderVoiceModels();
   for(const side of ['dep','arr']){const el=$('rv').querySelector(`[data-p="${side}.metar"]`);el.addEventListener('input',()=>{S.plan[side].wxSrc=el.value.trim()?'you':'';});}
   voicesNote();
