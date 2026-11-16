@@ -676,17 +676,37 @@ function fromManual(v){
 
 /* ================= frequencies ================= */
 function fakeFreq(seed,lo,hi){const steps=Math.floor((hi-lo)/0.025);return(lo+(hash(seed)%steps)*0.025).toFixed(3);}
+// Real frequencies from OurAirports, bundled next to this page (airports/freq/K.json, ...).
+const FREQ_CACHE={};
 async function realFreqs(icao){
-  // Only works when the page is hosted somewhere that allows outside requests.
+  const ch=String(icao||'?')[0];
   try{
-    const ctl=new AbortController();const tm=setTimeout(()=>ctl.abort(),7000);
-    const r=await fetch('https://davidmegginson.github.io/ourairports-data/airport-frequencies.csv',{signal:ctl.signal});clearTimeout(tm);
-    const txt=await r.text();const out={};
-    for(const line of txt.split('\n')){if(!line.includes('"'+icao+'"'))continue;const c=line.split(',').map(x=>x.replace(/"/g,''));const type=(c[3]||'').toUpperCase(),f=c[5];if(!f)continue;(out[type]=out[type]||[]).push(f);}
-    return out;
+    if(!FREQ_CACHE[ch]){const ctl=new AbortController();const tm=setTimeout(()=>ctl.abort(),8000);
+      FREQ_CACHE[ch]=fetch(`airports/freq/${ch}.json`,{signal:ctl.signal}).then(r=>r.ok?r.json():{}).catch(()=>({})).finally(()=>clearTimeout(tm));}
+    const d=await FREQ_CACHE[ch];return d[icao]||null;
   }catch(e){return null;}
 }
-function choose(real,types){if(!real)return null;for(const t of types)if(real[t]&&real[t][0])return real[t][0];return null;}
+// Pick the best entry: right type, COM band, and when an airport has several, the one for your runway.
+function pickFreq(list,types,o={}){
+  if(!list)return null;
+  let c=list.filter(x=>types.includes(String(x[0]).toUpperCase())&&x[2]>=118&&x[2]<137);
+  if(o.not)c=c.filter(x=>!o.not.test(x[1]));
+  if(o.prefer){const p=c.filter(x=>o.prefer.test(x[1]));if(p.length)c=p;}
+  if(o.rwy){const n=parseInt(o.rwy,10);const p=c.filter(x=>{const m=String(x[1]).match(/(?:RWY|RWAY|RUNWAY|RY)\s*0?(\d{1,2})[LRC]?\s*[-\/]\s*0?(\d{1,2})/i)||String(x[1]).match(/(?:RWY|RWAY|RUNWAY|RY)\s*0?(\d{1,2})/i);return m&&(+m[1]===n||+m[2]===n);});if(p.length)c=p;}
+  return c[0]||null;
+}
+// Facility names that aren't the city: SoCal Approach, Potomac, NorCal, Heathrow Director...
+const TRACON={KORD:'Chicago',KMDW:'Chicago',KJFK:'New York',KLGA:'New York',KEWR:'New York',KTEB:'New York',KHPN:'New York',KISP:'New York',KDCA:'Potomac',KIAD:'Potomac',KBWI:'Potomac',KRIC:'Potomac',KSFO:'NorCal',KOAK:'NorCal',KSJC:'NorCal',KSMF:'NorCal',KLAX:'SoCal',KSAN:'SoCal',KBUR:'SoCal',KONT:'SoCal',KSNA:'SoCal',KLAS:'Las Vegas',KDFW:'Regional',KDAL:'Regional',KIAH:'Houston',KHOU:'Houston',KMIA:'Miami',KFLL:'Miami',KPBI:'Palm Beach',KMCO:'Orlando',KTPA:'Tampa',KDEN:'Denver',KSEA:'Seattle',KPDX:'Portland',KPHX:'Phoenix',KMSP:'Minneapolis',KDTW:'Detroit',KBOS:'Boston',KPHL:'Philadelphia',KATL:'Atlanta',KCLT:'Charlotte',KSLC:'Salt Lake City',KSTL:'St Louis',KMCI:'Kansas City'};
+function facNameFrom(entry,fallback,suffix){
+  if(!entry)return fallback;
+  let d=String(entry[1]).toUpperCase().replace(/\(.*?\)/g,' ');
+  const own=/DIRECTOR/.test(d)?'Director':/CENTRE/.test(d)?'Centre':/CENTER|CNTR/.test(d)?'Center':/CONTROL/.test(d)?'Control':/RADAR/.test(d)?'Radar':null;
+  d=d.replace(/\b(APP(ROACH)?|DEP(ARTURE)?|A\/D|APP\/DEP|ARR(IVAL)?|DIR(ECTOR)?|CENTER|CENTRE|CNTR|CONTROL|RADAR|TWR|TOWER|GND|GROUND|CLNC|DEL|CLD|FINAL|EAST|WEST|NORTH|SOUTH|HIGH|LOW|SECTOR|SEC|RWY|RWAY|FAA|CONTRACT)\b/g,' ').replace(/[^A-Z ]/g,' ').replace(/\s+/g,' ').trim();
+  if(!d||d.length<3)return own&&suffix!=='Approach'&&suffix!=='Departure'?fallback.replace(/\S+$/,own):fallback;
+  const SPECIAL={SOCAL:'SoCal',NORCAL:'NorCal',NY:'New York','N Y':'New York',POTOMAC:'Potomac'};
+  const name=SPECIAL[d]||titleCase(d);
+  return name+' '+(own&&!/Approach|Departure/.test(suffix)?own:own==='Director'?'Director':suffix);
+}
 
 /* ================= facilities and voices ================= */
 let VOICES=[];
@@ -723,27 +743,47 @@ function assignVoices(){if(!S.fac)return;for(const f of Object.values(S.fac)){f.
 async function buildFacilities(p){
   const dr=regionFor(p.dep.icao),ar=regionFor(p.arr.icao);
   const [rd,ra]=await Promise.all([realFreqs(p.dep.icao),realFreqs(p.arr.icao)]);
-  const mk=(key,name,region,vIdx,real,types,lo,hi)=>{const r=choose(real,types);return{key,name,region,style:region.style,vIdx,freq:fmtFreq(r||fakeFreq(p.dep.icao+p.arr.icao+key,lo,hi)),est:!r,pitch:[1,.93,1.07,.97,1.04,.95,1.05,.98,1.02,1][vIdx%10]};};
+  const mk=(key,name,region,vIdx,entry,lo,hi)=>({key,name,region,style:region.style,vIdx,freq:fmtFreq(entry?entry[2].toFixed(3):fakeFreq(p.dep.icao+p.arr.icao+key,lo,hi)),est:!entry,src:entry?entry[1]:'',pitch:[1,.93,1.07,.97,1.04,.95,1.05,.98,1.02,1][vIdx%10]});
   const dn=p.dep.call,an=p.arr.call;
   const fd=dr.style==='faa',fa=ar.style==='faa';
   let c1=p.firs[0]&&FIRNAMES[p.firs[0]]?FIRNAMES[p.firs[0]]:centreFor(p.dep);
   let c2=p.firs.length>1&&FIRNAMES[p.firs[p.firs.length-1]]?FIRNAMES[p.firs[p.firs.length-1]]:centreFor(p.arr);
-  const F={
-    clr:mk('clr',dn+(fd?' Clearance':' Delivery'),dr,0,rd,['CLD','DEL','CLNC','CD'],121.6,121.975),
-    gnd:mk('gnd',dn+' Ground',dr,1,rd,['GND'],121.6,121.975),
-    twr:mk('twr',dn+' Tower',dr,2,rd,['TWR'],118.0,120.95),
-    dep:mk('dep',dn+' Departure',dr,3,rd,['DEP','APP/DEP','A/D','APP'],119.0,127.0),
-    ctr1:mk('ctr1',c1,dr,4,null,[],125.0,135.95),
-    ctr2:mk('ctr2',c2,ar,5,null,[],125.0,135.95),
-    app:mk('app',an+' Approach',ar,6,ra,['APP','ARR','APP/DEP','A/D'],119.0,127.0),
-    atwr:mk('atwr',an+' Tower',ar,7,ra,['TWR'],118.0,120.95),
-    agnd:mk('agnd',an+' Ground',ar,8,ra,['GND'],121.6,121.975),
-    datis:mk('datis',dn+' ATIS',dr,9,rd,['ATIS','D-ATIS'],126.0,135.0),
-    aatis:mk('aatis',an+' ATIS',ar,9,ra,['ATIS','D-ATIS'],126.0,135.0)
+  const E={
+    clr:pickFreq(rd,['CLD','DEL','CLNC','CD','PTD']),
+    gnd:pickFreq(rd,['GND'],{rwy:p.dep.rwy}),
+    twr:pickFreq(rd,['TWR','TOWER'],{rwy:p.dep.rwy}),
+    dep:pickFreq(rd,['DEP','A/D','APP/DEP','APP','TCA','RDR'],{rwy:p.dep.rwy,prefer:/DEP|A\/D/}),
+    ctr1:pickFreq(rd,['CNTR','ACC']),
+    ctr2:pickFreq(ra,['CNTR','ACC']),
+    app:pickFreq(ra,['APP','A/D','APP/DEP','ARR','DIR','TCA','RDR'],{rwy:p.arr.rwy}),
+    atwr:pickFreq(ra,['TWR','TOWER'],{rwy:p.arr.rwy}),
+    agnd:pickFreq(ra,['GND'],{rwy:p.arr.rwy}),
+    datis:pickFreq(rd,['ATIS','D-ATIS'],{prefer:/DEP/i,not:/ARR/i})||pickFreq(rd,['AWOS','ASOS']),
+    aatis:pickFreq(ra,['ATIS','D-ATIS'],{prefer:/ARR/i,not:/DEP/i})||pickFreq(ra,['AWOS','ASOS'])
   };
+  if(!E.clr&&rd&&rd.length&&fd)E.clr=null;
+  if(E.ctr1&&/CENTER|CENTRE|CONTROL|RADAR|CNTR/i.test(E.ctr1[1]))c1=facNameFrom(E.ctr1,c1,'Center');
+  if(E.ctr2&&/CENTER|CENTRE|CONTROL|RADAR|CNTR/i.test(E.ctr2[1]))c2=facNameFrom(E.ctr2,c2,'Center');
+  const F={
+    clr:mk('clr',dn+(fd?' Clearance':' Delivery'),dr,0,E.clr,121.6,121.975),
+    gnd:mk('gnd',dn+' Ground',dr,1,E.gnd,121.6,121.975),
+    twr:mk('twr',dn+' Tower',dr,2,E.twr,118.0,120.95),
+    dep:mk('dep',TRACON[p.dep.icao]?TRACON[p.dep.icao]+' Departure':facNameFrom(E.dep,dn+' Departure','Departure'),dr,3,E.dep,119.0,127.0),
+    ctr1:mk('ctr1',c1,dr,4,E.ctr1,125.0,135.95),
+    ctr2:mk('ctr2',c2,ar,5,E.ctr2,125.0,135.95),
+    app:mk('app',TRACON[p.arr.icao]?TRACON[p.arr.icao]+' Approach':facNameFrom(E.app,an+(E.app&&/DIR/i.test(E.app[0]+E.app[1])?' Director':' Approach'),'Approach'),ar,6,E.app,119.0,127.0),
+    atwr:mk('atwr',an+' Tower',ar,7,E.atwr,118.0,120.95),
+    agnd:mk('agnd',an+' Ground',ar,8,E.agnd,121.6,121.975),
+    datis:mk('datis',dn+(E.datis&&/AWOS|ASOS/.test(E.datis[0])?' '+E.datis[0]:' ATIS'),dr,9,E.datis,126.0,135.0),
+    aatis:mk('aatis',an+(E.aatis&&/AWOS|ASOS/.test(E.aatis[0])?' '+E.aatis[0]:' ATIS'),ar,9,E.aatis,126.0,135.0)
+  };
+  // Small airports: no clearance delivery frequency means Ground gives the clearance.
+  F.clr.noCD=!E.clr&&!!rd;
+  if(F.clr.noCD){F.clr.name=F.gnd.name;F.clr.freq=F.gnd.freq;F.clr.est=F.gnd.est;F.clr.src=F.gnd.src;}
   if(F.ctr2.name===F.ctr1.name)F.ctr2.freq=fmtFreq(fakeFreq('second'+p.arr.icao,125.0,135.95));
   const used=new Set();
-  for(const f of Object.values(F)){let n=parseFloat(f.freq);while(used.has(n.toFixed(3))){n+=0.025;if(n>136.975)n=118.0;}f.freq=fmtFreq(n.toFixed(3));used.add(n.toFixed(3));}
+  for(const f of Object.values(F)){if(!f.est){used.add(parseFloat(f.freq).toFixed(3));continue;}}
+  for(const f of Object.values(F)){if(!f.est)continue;let n=parseFloat(f.freq);while(used.has(n.toFixed(3))){n+=0.025;if(n>136.975)n=118.0;}f.freq=fmtFreq(n.toFixed(3));used.add(n.toFixed(3));}
   S.fac=F;assignVoices();return F;
 }
 
@@ -1514,7 +1554,7 @@ const HANDLERS={
     if(st==='faa'){
       issue(key,M(P_cs(),', cleared to the ',p.arr.call,' airport via ',via,', then as filed. Maintain ',a,', expect ',cr,' ',{t:'10 minutes',s:'one zero minutes'},' after departure. Departure frequency ',dq,', squawk ',sq,'.'),
         [R_num(a.v,a.t,a.s),R_num(dq.v,'departure '+dq.t,'departure '+dq.s),R_num(sq.v,'squawk '+sq.t,'squawk '+sq.s)],
-        ()=>{S.f.cleared=true;if(key==='gnd'){atc('gnd',M(P_cs(),', readback correct. Advise ready to taxi.'));}else{const g=P_freq(facOf('gnd').freq,st);atc('clr',M(P_cs(),', readback correct. Contact Ground ',g,' when ready to taxi.'));}S.phase='gnd_out';S.cur='gnd';},
+        ()=>{S.f.cleared=true;if(key==='gnd'||facOf('clr').noCD){atc(key,M(P_cs(),', readback correct. Advise ready to taxi.'));}else{const g=P_freq(facOf('gnd').freq,st);atc('clr',M(P_cs(),', readback correct. Contact Ground ',g,' when ready to taxi.'));}S.phase='gnd_out';S.cur='gnd';},
         `Cleared to ${p.arr.call} via ${via.t}, maintain ${a.t}, departure ${dq.t}, squawk ${sq.t}, ${S.csInfo.t}.`);
     }else{
       const climb=a.ft>=ta?'climb ':'climb altitude ';
@@ -1971,7 +2011,7 @@ function renderReview(){
   <p class="muted">Can't load it? Open <a href="https://aviationweather.gov/data/metar/?id=${esc(p.dep.icao)},${esc(p.arr.icao)}" target="_blank" rel="noopener">aviationweather.gov</a>, copy each METAR line, and paste it above.</p>
   <label style="margin-top:12px">Controllers and frequencies (edit to match your sim)</label>
   <table>${rows.map(([k,f])=>`<tr><td><input data-f="${k}.name" value="${esc(f.name)}"></td><td style="width:110px"><input data-f="${k}.freq" value="${esc(f.freq)}" inputmode="decimal"></td><td style="width:42px" class="muted">${f.est?'est.':''}</td></tr>`).join('')}</table>
-  <p class="muted">"est." means a made-up frequency. Tune whatever Squawk shows, or type in the real one from the sim's airport info.</p>`;
+  <p class="muted">Frequencies come from the OurAirports database of real airport frequencies. "est." means none was listed (usually en-route centers), so Squawk made one up. Edit any of them to match your sim.</p>`;
   for(const i of $('rv').querySelectorAll('[data-p]'))i.oninput=()=>{const [a,b]=i.dataset.p.split('.');const old=b?S.plan[a][b]:S.plan[a];const v=i.value.trim();if(b)S.plan[a][b]=v;else S.plan[a]=v;
     if(b==='call'&&old&&v){const keys=a==='dep'?['clr','gnd','twr','dep','datis']:['app','atwr','agnd','aatis'];for(const k of keys){const f=S.fac[k];if(f.name.startsWith(old)){f.name=v+f.name.slice(old.length);const el=$('rv').querySelector(`[data-f="${k}.name"]`);if(el)el.value=f.name;}}S.plan[a].known=true;}};
   for(const i of $('rv').querySelectorAll('[data-f]'))i.oninput=()=>{const [a,b]=i.dataset.f.split('.');S.fac[a][b]=b==='freq'?i.value.trim():i.value;S.fac[a].est=false;};
