@@ -72,7 +72,7 @@ a{color:var(--blue)}
 .events{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
 .events button{border-color:#4a3a1a;background:#221a0b;color:var(--amber);font-size:14px}
 .ctrl{display:flex;align-items:center;gap:10px}
-#ptt{width:86px;height:86px;border-radius:50%;background:var(--amber);color:#1a1200;border:none;font-weight:800;font-size:15px;flex:none}
+#ptt{width:96px;height:96px;border-radius:50%;background:var(--amber);color:#1a1200;border:none;font-weight:800;font-size:13px;line-height:1.15;flex:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:none}
 #ptt.live{background:var(--red);color:#fff;animation:pulse 1s infinite}
 @keyframes pulse{50%{box-shadow:0 0 0 10px rgba(248,113,113,.15)}}
 .side{display:flex;flex-direction:column;gap:6px;flex:1}
@@ -224,7 +224,7 @@ td input{padding:6px 8px}
   <div class="events" id="events"></div>
   <details class="card" style="padding:10px 14px"><summary>Frequency chart</summary><table id="fchart"></table><p class="muted">Tap a frequency to load it into standby.</p></details>
   <div class="ctrl">
-    <button id="ptt">TALK</button>
+    <button id="ptt">HOLD<br>TO TALK</button>
     <div class="side">
       <div id="partial"></div>
       <div class="row"><input id="txt" placeholder="Or type your radio call"><button id="txtSend" style="flex:none">Send</button></div>
@@ -1414,7 +1414,7 @@ function renderFlight(){
   const ev=$('events');ev.innerHTML='';
   for(const [k,e] of Object.entries(EVENTS))if(e.when()){const b=document.createElement('button');b.textContent=e.label;b.onclick=()=>{unlockAudio();event(k);};ev.appendChild(b);}
   if(S.phase==='done'){const b=document.createElement('button');b.textContent='Fly again';b.onclick=()=>{$('log').innerHTML='';startFlight();RADIO.sby=fnorm(facOf('clr').freq);sys(`Tune ${facOf('clr').name} on ${fshow(facOf('clr').freq)} for your clearance.`);renderFlight();};ev.appendChild(b);}
-  $('ptt').classList.toggle('live',MIC.on);$('ptt').textContent=MIC.on?'SEND':'TALK';
+  $('ptt').classList.toggle('live',MIC.on);$('ptt').innerHTML=MIC.on?'TRANS-<br>MITTING':'HOLD<br>TO TALK';
 }
 
 /* ---- mic ---- */
@@ -1428,30 +1428,39 @@ function setupDict(){
   d.onState(({state})=>{if(state==='idle'&&MIC.on){MIC.on=false;const h=MIC.heard;MIC.heard='';$('partial').textContent='';if(h)pilotSay(h);renderFlight();}});
   micNote();
 }
-function micNote(){if(HEADLESS)return;$('micNote').textContent=micAvailable()?'Tap TALK, say your call, then tap SEND.':'Voice input isn\'t available in this browser. Type your call or tap "Send this call". For voice, open this page in Chrome.';}
-function pttPress(){
-  unlockAudio();
-  if(MIC.on){
-    if(CAP.dict){CAP.dict.stop().catch(()=>{});}
-    else if(MIC.rec){try{MIC.rec.stop();}catch(e){}}
-    return;
-  }
+function micNote(){if(HEADLESS)return;$('micNote').textContent=micAvailable()?'Hold the button (or the spacebar on a keyboard) while you talk, and let go to send. Just like the push-to-talk switch on a yoke.':'Voice input isn\'t available in this browser. Type your call or tap "Send this call". For voice, open this page in Chrome.';}
+// Push to talk: hold the button (or spacebar) to transmit, release to send.
+function pttDown(){
+  if(MIC.on)return;
+  unlockAudio();radioClick();
   if(typeof speechSynthesis!=='undefined')speechSynthesis.cancel();
-  MIC.heard='';
+  MIC.heard='';MIC.tmp='';MIC.held=true;MIC.at=Date.now();
   if(CAP.dict){
-    CAP.dict.start().then(()=>{}).catch(e=>{MIC.on=false;renderFlight();if(e&&e.code==='not_granted'){MIC.blocked=true;micNote();}});
+    CAP.dict.start().then(()=>{if(!MIC.held)CAP.dict.stop().catch(()=>{});}).catch(e=>{MIC.on=false;renderFlight();if(e&&e.code==='not_granted'){MIC.blocked=true;micNote();}});
     MIC.on=true;renderFlight();return;
   }
   if(SR&&!MIC.blocked){
     const r=new SR();r.lang='en-US';r.interimResults=true;r.continuous=true;MIC.rec=r;
-    r.onresult=e=>{let fin='',int='';for(let i=0;i<e.results.length;i++){if(e.results[i].isFinal)fin+=e.results[i][0].transcript+' ';else int+=e.results[i][0].transcript;}MIC.heard=fin.trim();$('partial').textContent=(fin+int).trim();MIC.tmp=(fin+int).trim();};
+    r.onresult=e=>{let fin='',int='';for(let i=0;i<e.results.length;i++){if(e.results[i].isFinal)fin+=e.results[i][0].transcript+' ';else int+=e.results[i][0].transcript;}MIC.heard=fin.trim();MIC.tmp=(fin+int).trim();$('partial').textContent=MIC.tmp;};
     r.onerror=e=>{if(/not-allowed|service-not-allowed/.test(e.error)){MIC.blocked=true;micNote();sys('Microphone is blocked here. Type your call instead.');}};
-    r.onend=()=>{MIC.on=false;const h=MIC.heard||MIC.tmp||'';MIC.heard='';MIC.tmp='';$('partial').textContent='';if(h)pilotSay(h);renderFlight();};
+    // Some browsers stop listening on their own after a pause; restart while the button is still held.
+    r.onend=()=>{if(MIC.held&&!MIC.blocked){try{MIC.keep=(MIC.keep?MIC.keep+' ':'')+(MIC.tmp||'');MIC.tmp='';r.start();return;}catch(e){}}
+      MIC.on=false;const h=((MIC.keep||'')+' '+(MIC.tmp||MIC.heard||'')).trim();MIC.heard='';MIC.tmp='';MIC.keep='';$('partial').textContent='';radioClick(true);if(h)pilotSay(h);renderFlight();};
     try{r.start();MIC.on=true;}catch(e){MIC.blocked=true;micNote();}
     renderFlight();return;
   }
-  sys('Voice input isn\'t available here. Type your call below.');
+  MIC.held=false;sys('Voice input isn\'t available here. Type your call below.');
 }
+function pttUp(){
+  if(!MIC.held)return;MIC.held=false;
+  // keep the mic open a moment so the last word isn't clipped
+  const wait=Math.max(0,450-(Date.now()-MIC.at));
+  setTimeout(()=>{
+    if(CAP.dict){CAP.dict.stop().catch(()=>{});}
+    else if(MIC.rec){try{MIC.rec.stop();}catch(e){}}
+  },Math.max(wait,250));
+}
+function typing(){const a=document.activeElement;return a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.tagName==='SELECT'||a.isContentEditable);}
 
 /* ---- review screen ---- */
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
@@ -1605,7 +1614,13 @@ function init(){
     micNote();renderFlight();
   };
   // flight
-  $('ptt').onclick=pttPress;
+  const ptt=$('ptt');
+  ptt.addEventListener('pointerdown',e=>{e.preventDefault();try{ptt.setPointerCapture(e.pointerId);}catch(_){}pttDown();});
+  for(const ev of ['pointerup','pointercancel','lostpointercapture'])ptt.addEventListener(ev,()=>pttUp());
+  ptt.addEventListener('contextmenu',e=>e.preventDefault());
+  document.addEventListener('keydown',e=>{if(e.code!=='Space'||typing()||$('flight').classList.contains('hidden'))return;e.preventDefault();if(!e.repeat)pttDown();});
+  document.addEventListener('keyup',e=>{if(e.code!=='Space'||$('flight').classList.contains('hidden'))return;e.preventDefault();pttUp();});
+  window.addEventListener('blur',()=>pttUp());
   wireKnob($('kOuter'),'outer');wireKnob($('kInner'),'inner');
   $('rSwap').onclick=()=>{unlockAudio();swapRadio();};
   const tune=()=>{unlockAudio();const f=parseFreqInput($('rType').value);if(!f){$('rType').value='';$('rType').placeholder='Use 118.000 to 136.975';return;}$('rType').value='';setActive(f);};
