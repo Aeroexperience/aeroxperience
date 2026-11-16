@@ -843,6 +843,28 @@ function nearestTaxiNode(G,pt,filter){let best=null,bd=1e12;for(const id of G.ad
 function rwyKey(r){const m=String(r||'').toUpperCase().match(/^0*(\d{1,2})([LRC])?$/);return m?m[1]+(m[2]||''):String(r||'').toUpperCase();}
 function findRunway(G,rw){
   const key=rwyKey(rw);
+  if(G.runways.some(R=>R.ends)){
+    const want=key.match(/^(\d{1,2})([LRC]?)$/);let best=null,bd=99;
+    for(const R of G.runways){if(!R.ends)continue;R.ends.forEach((e,i)=>{const k=rwyKey(e.id);let d=99;
+      if(k===key)d=0;else if(want){const m=k.match(/^(\d{1,2})([LRC]?)$/);if(m&&m[2]===want[2]){const df=Math.abs(+m[1]-+want[1])%36;d=Math.min(df,36-df);if(d>2||angDiff(brg(R.ends[i],R.ends[1-i]),(+want[1]||36)*10)>30)d=99;}}
+      if(d<bd){bd=d;best={R,thr:R.ends[i],end:R.ends[1-i],ref:R.ref};}});}
+    if(best&&best.R.nodes.length)return best;
+    // Name didn't match (runways get renumbered): match by direction, then pick left/center/right among parallels.
+    if(want){
+      const hdg=(+want[1]||36)*10;const cands=[];
+      for(const R of G.runways){if(!R.ends||!R.nodes.length)continue;for(let i=0;i<2;i++){const a=R.ends[i],b=R.ends[1-i];if(angDiff(brg(a,b),hdg)<=30)cands.push({R,thr:a,end:b,ref:R.ref});}}
+      if(cands.length){
+        if(cands.length>1&&want[2]){
+          const rad=hdg*Math.PI/180,o=cands[0].thr,k=Math.cos(o.lat*Math.PI/180);
+          // lateral offset to the right of the direction of travel
+          const right=c=>{const x=(c.thr.lon-o.lon)*k,y=c.thr.lat-o.lat;return x*Math.cos(rad)-y*Math.sin(rad);};
+          cands.sort((a,b)=>right(a)-right(b));
+          return want[2]==='L'?cands[0]:want[2]==='R'?cands[cands.length-1]:cands[Math.floor(cands.length/2)];
+        }
+        return cands[0];
+      }
+    }
+  }
   for(const R of G.runways){const ends=R.ref.split('/').map(rwyKey);if(ends.includes(key)){
     const a=G.N.get(R.nodes[0]),b=G.N.get(R.nodes[R.nodes.length-1]);if(!a||!b)continue;
     const hdg=(parseInt(key,10)||36)*10;const fwd=angDiff(brg(a,b),hdg)<90;
@@ -855,7 +877,7 @@ function taxiPath(G,from,targets,allowRef){
   const push=(d,id)=>{heap.push([d,id]);let i=heap.length-1;while(i>0){const p=(i-1)>>1;if(heap[p][0]<=heap[i][0])break;[heap[p],heap[i]]=[heap[i],heap[p]];i=p;}};
   const pop=()=>{const top=heap[0],last=heap.pop();if(heap.length){heap[0]=last;let i=0;for(;;){const l=2*i+1,r=l+1;let m=i;if(l<heap.length&&heap[l][0]<heap[m][0])m=l;if(r<heap.length&&heap[r][0]<heap[m][0])m=r;if(m===i)break;[heap[m],heap[i]]=[heap[i],heap[m]];i=m;}}return top;};
   while(heap.length){const [d,u]=pop();if(done.has(u))continue;done.add(u);if(T.has(u)){const path=[u];let x=u;while(prev.has(x)){const pe=prev.get(x);path.unshift(pe.from);x=pe.from;}return path.map((id,i)=>({id,edge:i?prev.get(id).edge:null}));}
-    for(const e of G.adj.get(u)||[]){const rr=G.rwyOf.get(e.to);const pen=(rr&&rr!==allowRef&&!T.has(e.to))?400:0;const nd=d+e.len+pen+(e.kind==='taxilane'?e.len*0.3:0);if(nd<(dist.get(e.to)??1e18)){dist.set(e.to,nd);prev.set(e.to,{from:u,edge:e});push(nd,e.to);}}}
+    for(const e of G.adj.get(u)||[]){const rr=G.rwyOf.get(e.to);const pen=(rr&&rr!==allowRef&&!T.has(e.to))?400:0;const nd=d+e.len+pen+(e.kind==='taxilane'?e.len*0.3:0)+(e.kind==='push'?e.len*4:0);if(nd<(dist.get(e.to)??1e18)){dist.set(e.to,nd);prev.set(e.to,{from:u,edge:e});push(nd,e.to);}}}
   return null;
 }
 // Turn a node path into ATC route pieces: taxiway names and runway crossings
@@ -894,11 +916,14 @@ function planDepartureTaxi(G,parkRef,rw){
   const d0=hav(G.N.get(entries[0]),R.thr);const tgt=entries.filter(id=>hav(G.N.get(id),R.thr)<=d0+250);
   const park=G.parking.find(p=>p.ref===parkRef);
   const startPt=park||centroid(G.parking.length?G.parking:[...G.adj.keys()].slice(0,500).map(id=>G.N.get(id)));
-  const start=nearestTaxiNode(G,startPt,id=>!G.rwyOf.has(id));
-  const path=taxiPath(G,start,tgt,R.ref);if(!path)return null;
+  const start=park&&park.start!=null&&G.adj.has(park.start)?park.start:nearestTaxiNode(G,startPt,id=>!G.rwyOf.has(id));
+  let path=taxiPath(G,start,tgt,R.ref);
+  if(!path){const comp=compOf(G,tgt[0]);const pt=G.N.get(start)||startPt;const s2=nearestTaxiNode(G,pt,id=>comp.has(id)&&!G.rwyOf.has(id));if(s2!=null)path=taxiPath(G,s2,tgt,R.ref);}
+  if(!path)return null;
   const pieces=routePieces(G,path,R.ref);
   return{steps:stepsFrom(pieces),from:park?park.ref:'',rwy:R.ref};
 }
+function compOf(G,from){const seen=new Set([from]),st=[from];while(st.length){const u=st.pop();for(const e of G.adj.get(u)||[])if(!seen.has(e.to)){seen.add(e.to);st.push(e.to);}}return seen;}
 function centroid(pts){const n=pts.length||1;return{lat:pts.reduce((s,p)=>s+p.lat,0)/n,lon:pts.reduce((s,p)=>s+p.lon,0)/n};}
 function planArrivalTaxi(G,rw,parkRef,heavy){
   const R=findRunway(G,rw);if(!R)return null;
@@ -914,15 +939,50 @@ function planArrivalTaxi(G,rw,parkRef,heavy){
   const turn=cr>0?'left':'right';
   const park=G.parking.find(p=>p.ref===parkRef);
   let steps=null;
-  if(park){const goal=nearestTaxiNode(G,park,id=>!G.rwyOf.has(id));const path=taxiPath(G,best.off,[goal],null);if(path){const pcs=routePieces(G,path,null);if(pcs[0]&&pcs[0].twy===best.name&&pcs.length>1)pcs.shift();steps=stepsFrom(pcs);}}
+  if(park){const goal=park.start!=null&&G.adj.has(park.start)?park.start:nearestTaxiNode(G,park,id=>!G.rwyOf.has(id));let path=taxiPath(G,best.off,[goal],null);
+    if(!path){const comp=compOf(G,best.off);const g2=nearestTaxiNode(G,park,id=>comp.has(id)&&!G.rwyOf.has(id));if(g2!=null)path=taxiPath(G,best.off,[g2],null);}if(path){const pcs=routePieces(G,path,null);if(pcs[0]&&pcs[0].twy===best.name&&pcs.length>1)pcs.shift();steps=stepsFrom(pcs);}}
   return{exit:best.name,turn,steps,to:park?park.ref:''};
 }
 // Saved maps live in the browser's IndexedDB so each airport downloads once.
 function idb(){return new Promise((res,rej)=>{try{const r=indexedDB.open('squawk',1);r.onupgradeneeded=()=>r.result.createObjectStore('osm');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);}catch(e){rej(e);}});}
 async function osmCacheGet(icao){try{const db=await idb();return await new Promise(res=>{const q=db.transaction('osm').objectStore('osm').get(icao);q.onsuccess=()=>res(q.result||null);q.onerror=()=>res(null);});}catch(e){return null;}}
 async function osmCachePut(icao,data){try{const db=await idb();db.transaction('osm','readwrite').objectStore('osm').put({at:Date.now(),data},icao);}catch(e){}}
+// Bundled taxi networks (FlightGear groundnets from X-Plane airport data) live next to this page.
+async function fetchGroundnet(icao){
+  const ctl=new AbortController();const tm=setTimeout(()=>ctl.abort(),10000);
+  try{const r=await fetch(`airports/${icao[0]}/${icao}.json`,{signal:ctl.signal});if(!r.ok)return null;return await r.json();}catch(e){return null;}finally{clearTimeout(tm);}
+}
+function buildGroundGraph(d){
+  const N=new Map(),adj=new Map(),rwyOf=new Map(),runways=[],parking=[];
+  d.n.forEach((x,i)=>N.set(i,{id:i,lat:x[0],lon:x[1]}));
+  d.r.forEach(r=>runways.push({ref:r[0]+'/'+r[1],nodes:[],ends:[{id:r[0],lat:r[2],lon:r[3]},{id:r[1],lat:r[4],lon:r[5]}]}));
+  d.n.forEach((x,i)=>{if((x[2]&1)&&x[3]>=0&&runways[x[3]]){rwyOf.set(i,runways[x[3]].ref);runways[x[3]].nodes.push(i);}});
+  const add=(a,b,name,kind)=>{const A=N.get(a),B=N.get(b);const len=hav(A,B);(adj.get(a)||adj.set(a,[]).get(a)).push({to:b,len,name,kind});(adj.get(b)||adj.set(b,[]).get(b)).push({to:a,len,name,kind});};
+  for(const [a,b,t,push] of d.e)add(a,b,t>=0?d.t[t]:'',push?'push':'taxiway');
+  for(const [name,node,push] of d.p){const n=N.get(node);if(n)parking.push({ref:name,lat:n.lat,lon:n.lon,node,start:push>=0?push:node});}
+  parking.sort((a,b)=>a.ref.localeCompare(b.ref,undefined,{numeric:true}));
+  return{N,adj,rwyOf,runways,parking,src:'bundled',names:d.t};
+}
+function escRe(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
+// Find a gate from what the pilot typed or said: "35", "gate 35", "B12", "Terminal 2 Gate 35"
+function findPark(G,q){
+  if(!G||!G.parking.length)return null;q=String(q||'').trim().toUpperCase().replace(/_/g,' ');if(!q)return null;
+  const P=G.parking;let p=P.find(x=>x.ref.toUpperCase()===q);if(p)return p;
+  const tok=q.replace(/^(GATE|STAND|SPOT|PARKING|RAMP)\s*/,'').trim();if(!tok)return null;
+  p=P.find(x=>new RegExp('(^|\\s)(GATE|STAND|SPOT)?\\s*'+escRe(tok)+'$','i').test(x.ref));if(p)return p;
+  p=P.find(x=>new RegExp('\\b'+escRe(tok)+'\\b','i').test(x.ref));return p||null;
+}
+// How ATC says a parking spot
+function gateSay(ref,style){
+  if(!ref)return '';const m=String(ref).match(/(gate|stand|spot)\s*([A-Z]?\d+[A-Z]?)\s*$/i);
+  if(m)return m[1].toLowerCase()+' '+m[2].toUpperCase();
+  if(/^[A-Z]{0,2}\d{1,3}[A-Z]?$/i.test(ref))return (style==='faa'?'gate ':'stand ')+ref.toUpperCase();
+  return String(ref).toLowerCase();
+}
 async function loadTaxi(side,force){
   const ap=S.plan[side];TAXI.status[side]='Loading real taxiways...';
+  const gn=await fetchGroundnet(ap.icao);
+  if(gn){const G=buildGroundGraph(gn);TAXI[side]=G;TAXI.status[side]=`Real taxiways loaded: ${G.names.length} taxiways, ${G.parking.length} gates and stands.`;return;}
   try{
     let osm=null;const c=force?null:await osmCacheGet(ap.icao);
     if(c&&Date.now()-c.at<60*86400e3)osm=c.data;
@@ -1168,7 +1228,7 @@ const HANDLERS={
     if(S.f.inTaxi)return false;
     const st=facOf('agnd').style;
     if(S.arrTaxi&&S.arrTaxi.steps&&S.arrTaxi.steps[0].twys.length){
-      S.f.inTaxi=true;S.taxiTo=(st==='faa'?'gate ':'stand ')+S.arrTaxi.to;S.taxiQ=S.arrTaxi.steps.slice(1);
+      S.f.inTaxi=true;S.taxiTo=gateSay(S.arrTaxi.to,st);S.taxiQ=S.arrTaxi.steps.slice(1);
       issueTaxiStep('agnd',S.arrTaxi.steps[0],null,true);return;
     }
     S.f.inTaxi=true;
@@ -1200,7 +1260,7 @@ function issueTaxiStep(key,step,rw,first){
 }
 function parkFrom(n){
   const m=n.match(/\b(gate|stand|spot|parking|ramp)\s+([a-z]{0,2}\s?\d{1,3}[a-z]?)\b/);
-  if(m&&TAXI.dep){const ref=m[2].replace(/\s/g,'').toUpperCase();if(TAXI.dep.parking.some(p=>p.ref===ref))S.plan.dep.park=ref;}
+  if(m&&TAXI.dep){const p=findPark(TAXI.dep,m[1]+' '+m[2].replace(/\s/g,''));if(p)S.plan.dep.park=p.ref;}
 }
 function apTypeT(){return{ils:'ILS',rnav:'RNAV',visual:'visual'}[S.f.appType||'ils'];}
 function apTypeS(){return{ils:'I L S',rnav:'R NAV',visual:'visual'}[S.f.appType||'ils'];}
@@ -1340,14 +1400,14 @@ function hint(){
   if(S.pending)return 'Read back: '+S.pending.rb;
   const p=S.plan,c=S.csInfo.t,f=n=>facOf(n).name;
   switch(S.phase){
-    case 'clr':{const where=p.dep.park?` at ${facOf('clr').style==='faa'?'gate':'stand'} ${p.dep.park},`:'';return facOf('clr').style==='faa'?`${f(S.cur)}, ${c},${where?where.replace(/,$/,''):''} IFR to ${p.arr.call}.`:`${f(S.cur)}, ${c}${where} information ${S.atis.dep}, request IFR clearance to ${p.arr.call}.`;}
+    case 'clr':{const where=p.dep.park?` at ${gateSay(p.dep.park,facOf('clr').style)},`:'';return facOf('clr').style==='faa'?`${f(S.cur)}, ${c},${where?where.replace(/,$/,'')+',':''} IFR to ${p.arr.call}.`:`${f(S.cur)}, ${c}${where} information ${S.atis.dep}, request IFR clearance to ${p.arr.call}.`;}
     case 'gnd_out':return S.taxiQ&&S.taxiQ.length?'Taxi and hold short, then tap "Holding short".':S.f.taxi?'Taxi to the runway, then tap "Near the runway".':(S.f.pushed?`${f('gnd')}, ${c}, ready to taxi.`:`${f('gnd')}, ${c}, at the gate, request push back.`);
     case 'twr_out':return S.f.tko?'Take off, then tap "Airborne".':S.f.tkoClr?'Waiting for takeoff clearance.':S.f.luaw?'Line up and wait for your takeoff clearance.':`${f('twr')}, ${c}, holding short runway ${P_rwy(p.dep.rwy).t}, ready for departure.`;
     case 'dep':return S.f.depIn?'Climb out, then tap "Leaving departure airspace".':`${f('dep')}, ${c}, with you, passing 2,000 for ${P_alt(initAlt(),TA('dep')).t}.`;
     case 'ctr':return !S.f['in_'+S.cur]?(S.cur==='ctr2'||(S.f.alt||0)>=p.cruise?`${f(S.cur)}, ${c}, with you, level ${P_alt(S.f.alt||p.cruise,TA('dep')).t}.`:`${f(S.cur)}, ${c}, with you, climbing through ${P_alt(Math.max((S.f.alt||depClimb())-2000,3000),TA('dep')).t} for ${P_alt(S.f.alt||depClimb(),TA('dep')).t}.`):S.f.desc?'Descend, then tap "Near the arrival airport".':`${f(S.cur)}, ${c}, request descent.`;
     case 'app':return !S.f.appIn?`${f('app')}, ${c}, with you descending, with information ${S.atis.arr}.`:!S.f.appClr?`${f('app')}, ${c}, ready for the approach.`:`${f('app')}, ${c}, established on the localizer.`;
     case 'twr_in':return S.f.landClr?'Land, then tap "Landed and clear of the runway".':S.f.cont?'Continue the approach and wait for landing clearance.':`${f('atwr')}, ${c}, on the ${apTypeT()} runway ${P_rwy(p.arr.rwy).t}.`;
-    case 'gnd_in':return S.taxiQ&&S.taxiQ.length?'Taxi and hold short, then tap "Holding short".':`${f('agnd')}, ${c}, clear of runway ${P_rwy(p.arr.rwy).t}${S.arrTaxi?' at '+S.arrTaxi.exit:''}, taxi to ${S.plan.arr.park?(facOf('agnd').style==='faa'?'gate ':'stand ')+S.plan.arr.park:(S.csInfo.airline?'the gate':'parking')}.`;
+    case 'gnd_in':return S.taxiQ&&S.taxiQ.length?'Taxi and hold short, then tap "Holding short".':`${f('agnd')}, ${c}, clear of runway ${P_rwy(p.arr.rwy).t}${S.arrTaxi?' at '+S.arrTaxi.exit:''}, taxi to ${S.plan.arr.park?gateSay(S.plan.arr.park,facOf('agnd').style):(S.csInfo.airline?'the gate':'parking')}.`;
     default:return 'Flight complete.';
   }
 }
@@ -1494,6 +1554,7 @@ function renderReview(){
   <button id="vmGet" class="hidden" style="margin-top:6px">Download voice models</button>
   <div class="row" style="align-items:flex-end;margin-top:10px"><div><label style="margin:0">Taxi routes</label><div id="taxiStatus" class="muted">Checking for real taxiway maps...</div></div><button id="taxiRetry" style="flex:none">Retry</button></div>
   <div class="grid" id="parkRow"></div>
+  <p class="muted" style="margin-top:4px">Taxi maps come from FlightGear's airport data (based on X-Plane, 2017). A few airports have changed since, so check the route against your sim.</p>
   <div class="row" style="align-items:flex-end;margin-top:10px"><div><label style="margin:0">Live weather</label><div id="wxStatus" class="muted">${wxStatus()}</div></div><button id="wxRefresh" style="flex:none">Refresh weather</button></div>
   <label>${esc(p.dep.icao)} METAR</label><input data-p="dep.metar" value="${esc(p.dep.metar)}" placeholder="Loading live weather...">
   <label>${esc(p.arr.icao)} METAR</label><input data-p="arr.metar" value="${esc(p.arr.metar)}" placeholder="Loading live weather...">
@@ -1531,6 +1592,19 @@ async function renderVoiceModels(){
 function renderTaxiReview(){
   if(!$('taxiStatus'))return;
   $('taxiStatus').textContent=`${S.plan.dep.icao}: ${TAXI.status.dep} ${S.plan.arr.icao}: ${TAXI.status.arr}`;
+  if((TAXI.dep&&TAXI.dep.src==='bundled')||(TAXI.arr&&TAXI.arr.src==='bundled')){
+    const gateBox=(G,side)=>{if(!G||!G.parking.length)return '';
+      return `<div><label>${side==='dep'?'Your gate or stand':'Arrival gate or stand'}</label><input data-gate="${side}" list="gl_${side}" placeholder="${side==='dep'?'e.g. 35 or Gate 35':'Leave blank and ATC picks'}" value="${esc(S.plan[side].gateTyped||'')}" autocomplete="off"><datalist id="gl_${side}">${G.parking.map(p=>`<option value="${esc(p.ref)}">`).join('')}</datalist><div class="muted" data-gatemsg="${side}"></div></div>`;};
+    $('parkRow').innerHTML=gateBox(TAXI.dep,'dep')+gateBox(TAXI.arr,'arr');
+    const apply=(side,el)=>{const G=TAXI[side];const typed=el.value.trim();S.plan[side].gateTyped=typed;const msg=$('parkRow').querySelector(`[data-gatemsg="${side}"]`);
+      let p=findPark(G,typed);
+      if(!typed&&side==='arr'){p=G.parking[Math.floor(G.parking.length/2)];msg.textContent='ATC will send you to '+p.ref+'.';}
+      else if(!typed){p=G.parking.find(x=>/gate/i.test(x.ref))||G.parking[0];msg.textContent='No gate entered. Starting at '+p.ref+'.';}
+      else if(p)msg.textContent='Found: '+p.ref;else{msg.textContent='Not found at '+S.plan[side].icao+'. Pick from the list.';}
+      if(p)S.plan[side].park=p.ref;};
+    for(const el of $('parkRow').querySelectorAll('[data-gate]')){el.oninput=()=>apply(el.dataset.gate,el);apply(el.dataset.gate,el);}
+    return;
+  }
   const opt=(G,side)=>{if(!G||!G.parking.length)return '';if(!S.plan[side].park)S.plan[side].park=side==='dep'?G.parking[0].ref:'';
     return `<div><label>${side==='dep'?'Departure gate/stand':'Arrival gate/stand'}</label><select data-park="${side}">${side==='arr'?'<option value="">Let ATC pick</option>':''}${G.parking.map(p=>`<option ${p.ref===S.plan[side].park?'selected':''}>${esc(p.ref)}</option>`).join('')}</select></div>`;};
   $('parkRow').innerHTML=opt(TAXI.dep,'dep')+opt(TAXI.arr,'arr');
