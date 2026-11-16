@@ -147,6 +147,7 @@ td input{padding:6px 8px}
       <div><label for="s_engine">Voice quality</label>
         <select id="s_engine">
           <option value="auto">Best available (recommended)</option>
+          <option value="kokoro">Kokoro AI voices (free, natural, one-time download)</option>
           <option value="azure">Azure voices (most human, needs your key)</option>
           <option value="piper">Piper voice models (free download)</option>
           <option value="claude">Claude voices (Claude page only)</option>
@@ -705,6 +706,38 @@ async function piperDownload(ids,onProg){
 }
 async function piperSynth(text,voiceId){const lib=await piperLib();return await lib.predict({text,voiceId});}
 
+/* Kokoro: a small neural voice model that runs in the browser (English, American and British voices) */
+const KK_LIB='https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/+esm';
+const KK_MODEL='onnx-community/Kokoro-82M-v1.0-ONNX';
+const KOKORO={tts:null,loading:null,ready:false,broken:false,mode:''};
+// Best-rated voices first (see the Kokoro model card grades)
+const KK_US=['am_michael','af_heart','am_fenrir','af_bella','am_puck','af_nicole','am_echo','af_sarah'];
+const KK_UK=['bm_george','bf_emma','bm_fable','bf_isabella','bm_lewis','bm_daniel'];
+function kokoroVoiceFor(region,idx){
+  const l=langsFor(region)[0]||'en-US';
+  const us=region.style==='faa'||l==='en-US'||l==='en-CA'||l==='en-PH'||SET.accent==='us';
+  const list=us?KK_US:KK_UK;return list[idx%list.length];
+}
+function kokoroCached(){try{return localStorage.getItem('squawk.kokoro')==='1';}catch(e){return false;}}
+function kokoroBig(){return !!navigator.gpu&&!/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);}
+async function kokoroLoad(onProg){
+  if(KOKORO.tts)return KOKORO.tts;
+  if(!KOKORO.loading)KOKORO.loading=(async()=>{
+    const {KokoroTTS}=await import(KK_LIB);
+    let tts=null;
+    if(kokoroBig()){try{tts=await KokoroTTS.from_pretrained(KK_MODEL,{dtype:'fp32',device:'webgpu',progress_callback:onProg});KOKORO.mode='WebGPU, full quality';}catch(e){tts=null;}}
+    if(!tts){tts=await KokoroTTS.from_pretrained(KK_MODEL,{dtype:'q8',device:'wasm',progress_callback:onProg});KOKORO.mode='standard';}
+    KOKORO.tts=tts;KOKORO.ready=true;KOKORO.broken=false;try{localStorage.setItem('squawk.kokoro','1');}catch(e){}
+    return tts;
+  })();
+  try{return await KOKORO.loading;}catch(e){KOKORO.loading=null;KOKORO.broken=true;throw e;}
+}
+let KGEN=Promise.resolve();
+function kokoroSynth(text,voice){
+  const p=KGEN.then(async()=>{const tts=await kokoroLoad();const a=await tts.generate(text,{voice,speed:Math.min(1.35,SET.rate*1.08)});return a.toBlob();});
+  KGEN=p.catch(()=>{});return p;
+}
+
 const AZ_VOICE={'en-US':['en-US-GuyNeural','en-US-DavisNeural','en-US-AndrewMultilingualNeural','en-US-BrianMultilingualNeural'],'en-GB':['en-GB-RyanNeural','en-GB-ThomasNeural'],'en-IE':['en-IE-ConnorNeural'],'en-IN':['en-IN-PrabhatNeural'],'en-AU':['en-AU-WilliamNeural'],'en-NZ':['en-NZ-MitchellNeural'],'en-ZA':['en-ZA-LukeNeural'],'en-SG':['en-SG-WayneNeural'],'en-CA':['en-CA-LiamNeural'],'en-PH':['en-PH-JamesNeural'],'en-KE':['en-KE-ChilembaNeural'],'en-NG':['en-NG-AbeoNeural'],'en-HK':['en-HK-SamNeural'],fr:['fr-FR-RemyMultilingualNeural','fr-FR-LucienMultilingualNeural','fr-FR-VivienneMultilingualNeural'],de:['de-DE-FlorianMultilingualNeural','de-DE-SeraphinaMultilingualNeural']};
 let AZ={key:'',region:'eastus'};
 try{Object.assign(AZ,JSON.parse(localStorage.getItem('squawk.azure')||'{}'));}catch(e){}
@@ -728,20 +761,36 @@ async function azSynth(text,voice){
   const b=await r.blob();if(!b.size)throw new Error('empty');return b;
 }
 // Plays generated audio through the radio filter. Pitch differs a little per controller.
-async function playAudio(blob,f,isAzure){
+let RADIO_CURVE=null;
+function radioCurve(){if(RADIO_CURVE)return RADIO_CURVE;const n=1024,c=new Float32Array(n);for(let i=0;i<n;i++){const x=i*2/n-1;c[i]=Math.tanh(2.2*x)/Math.tanh(2.2);}return RADIO_CURVE=c;}
+async function playAudio(blob,f,fixedRate){
   unlockAudio();if(!actx)throw new Error('no audio');
   const buf=await actx.decodeAudioData(await blob.arrayBuffer());
   return new Promise(res=>{
     const src=actx.createBufferSource();src.buffer=buf;
-    src.playbackRate.value=(f.pitch||1)*(isAzure?1:SET.rate);
-    let out=src;
-    if(SET.radio){const hp=actx.createBiquadFilter();hp.type='highpass';hp.frequency.value=320;const lp=actx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=3300;const g=actx.createGain();g.gain.value=1.5;src.connect(hp);hp.connect(lp);lp.connect(g);out=g;}
-    out.connect(actx.destination);TX.src=src;src.onended=()=>{if(TX.src===src)TX.src=null;res();};radioClick();src.start();
+    // small pitch differences make each controller and pilot sound like a different person
+    src.playbackRate.value=(fixedRate?1+((f.pitch||1)-1)*0.5:(f.pitch||1)*SET.rate);
+    let out=src,hiss=null;
+    if(SET.radio){
+      // VHF airband sound: narrow band, a little drive, heavy compression, faint carrier hiss
+      const hp=actx.createBiquadFilter();hp.type='highpass';hp.frequency.value=350;
+      const lp=actx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2900;
+      const pk=actx.createBiquadFilter();pk.type='peaking';pk.frequency.value=1700;pk.Q.value=0.9;pk.gain.value=4;
+      const ws=actx.createWaveShaper();ws.curve=radioCurve();
+      const cp=actx.createDynamicsCompressor();cp.threshold.value=-26;cp.ratio.value=8;cp.attack.value=0.003;cp.release.value=0.12;
+      const g=actx.createGain();g.gain.value=1.6;
+      src.connect(hp);hp.connect(lp);lp.connect(pk);pk.connect(ws);ws.connect(cp);cp.connect(g);out=g;
+      const nb=actx.createBuffer(1,actx.sampleRate*2,actx.sampleRate);const d=nb.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+      hiss=actx.createBufferSource();hiss.buffer=nb;hiss.loop=true;const hb=actx.createBiquadFilter();hb.type='bandpass';hb.frequency.value=2200;hb.Q.value=0.6;const hg=actx.createGain();hg.gain.value=0.018;
+      hiss.connect(hb);hb.connect(hg);hg.connect(actx.destination);hiss.start();
+    }
+    out.connect(actx.destination);TX.src=src;src.onended=()=>{if(hiss){try{hiss.stop();}catch(e){}}if(TX.src===src)TX.src=null;res();};radioClick();src.start();
   });
 }
 function engineFor(f){
   const e=SET.engine;
   if((e==='auto'||e==='azure')&&AZ.key&&!AZDEAD)return 'azure';
+  if((e==='auto'&&KOKORO.ready)||(e==='kokoro'&&!KOKORO.broken))return 'kokoro';
   if((e==='auto'&&PIPER.stored.has(f.piper))||(e==='piper'&&!PIPER.broken))return 'piper';
   if((e==='auto'||e==='claude')&&CAP.tts)return 'claude';
   return 'device';
@@ -755,17 +804,23 @@ function useClaudeVoiceOld(f){
   if(SET.engine==='device')return false;
   return !(f.voice&&voiceScore(f.voice)>=3);
 }
-async function sayAloud(f,text){
-  if(HEADLESS)return;
-  const eng=engineFor(f);
+// Make the audio for one line (starts right away so the next line is ready when this one ends)
+async function prepareAudio(f,text){
+  if(HEADLESS)return null;const eng=engineFor(f);
   if(eng==='azure'){
-    for(let i=0;i<2;i++){try{const v=azVoiceFor(f.region,f.vIdx);const b=await azSynth(text,v);await playAudio(b,f,true);radioClick(true);return;}catch(e){if(e.message!=='voice')break;}}
-    if(AZDEAD)sys(AZDEAD);
-  }else if(eng==='piper'){
-    try{const b=await piperSynth(text,f.piper);await playAudio(b,f,false);radioClick(true);return;}catch(e){PIPER.broken=!PIPER.lib;}
+    for(let i=0;i<2;i++){try{return{blob:await azSynth(text,azVoiceFor(f.region,f.vIdx)),fixedRate:true};}catch(e){if(e.message!=='voice')break;}}
+    if(AZDEAD)sys(AZDEAD);return null;
   }
-  return sayAloudBasic(f,text,eng==='claude');
+  if(eng==='kokoro'){try{return{blob:await kokoroSynth(text,kokoroVoiceFor(f.region,f.vIdx)),fixedRate:true};}catch(e){return null;}}
+  if(eng==='piper'){try{return{blob:await piperSynth(text,f.piper)};}catch(e){PIPER.broken=!PIPER.lib;return null;}}
+  return null;
 }
+async function playPrepared(f,text,prep){
+  let a=null;try{a=await prep;}catch(e){}
+  if(a&&a.blob){try{await playAudio(a.blob,f,a.fixedRate);radioClick(true);return;}catch(e){}}
+  return sayAloudBasic(f,text,engineFor(f)==='claude');
+}
+async function sayAloud(f,text){if(HEADLESS)return;return playPrepared(f,text,prepareAudio(f,text));}
 function sayAloudBasic(f,text,claudeFirst){
   return new Promise(res=>{
     const synth=typeof speechSynthesis!=='undefined'?speechSynthesis:null;
@@ -1224,7 +1279,7 @@ function chatterFor(k){
   }
   return null;
 }
-function enqueueSpeech(f,text){TX.n++;speakQ=speakQ.then(()=>sayAloud(f,text)).catch(()=>{}).then(()=>{TX.n--;TX.last=Date.now();});return speakQ;}
+function enqueueSpeech(f,text){TX.n++;const prep=HEADLESS?null:prepareAudio(f,text);speakQ=speakQ.then(()=>HEADLESS?null:playPrepared(f,text,prep)).catch(()=>{}).then(()=>{TX.n--;TX.last=Date.now();});return speakQ;}
 function playChatter(k,ex){
   const fac=facOf(k);
   for(const ln of ex.lines){
@@ -1819,8 +1874,11 @@ function renderReview(){
   </div>
   ${(!p.dep.known&&p.src!=='SimBrief')||(!p.arr.known&&p.src!=='SimBrief')?`<p class="err" style="margin-top:8px">I don't know what ATC calls ${[(!p.dep.known?p.dep.icao:''),(!p.arr.known?p.arr.icao:'')].filter(Boolean).join(' or ')}. Type the city or airport name above so it doesn't get spelled out.</p>`:''}
   <label style="margin-top:10px">Other traffic</label><div id="trStatus" class="muted"></div>
-  <label style="margin-top:10px">Voice models</label><div id="vmStatus" class="muted"></div>
-  <button id="vmGet" class="hidden" style="margin-top:6px">Download voice models</button>
+  <label style="margin-top:10px">Natural voices (Kokoro)</label><div id="kkStatus" class="muted"></div>
+  <button id="kkGet" class="hidden primary" style="margin-top:6px">Download natural voices</button>
+  <details style="margin-top:6px"><summary>Accent voice models (Piper)</summary>
+  <div id="vmStatus" class="muted"></div>
+  <button id="vmGet" class="hidden" style="margin-top:6px">Download voice models</button></details>
   <div class="row" style="align-items:flex-end;margin-top:10px"><div><label style="margin:0">Taxi routes</label><div id="taxiStatus" class="muted">Checking for real taxiway maps...</div></div><button id="taxiRetry" style="flex:none">Retry</button></div>
   <div class="grid" id="parkRow"></div>
   <p class="muted" style="margin-top:4px">Taxi maps come from FlightGear's airport data (based on X-Plane, 2017). A few airports have changed since, so check the route against your sim.</p>
@@ -1836,7 +1894,7 @@ function renderReview(){
   for(const i of $('rv').querySelectorAll('[data-f]'))i.oninput=()=>{const [a,b]=i.dataset.f.split('.');S.fac[a][b]=b==='freq'?i.value.trim():i.value;S.fac[a].est=false;};
   $('wxRefresh').onclick=()=>loadReviewWx(true);
   $('taxiRetry').onclick=()=>{$('taxiStatus').textContent='Loading real taxiways...';Promise.all([loadTaxi('dep',true),loadTaxi('arr',true)]).then(renderTaxiReview);};
-  renderVoiceModels();
+  renderVoiceModels();renderKokoro();
   for(const side of ['dep','arr']){const el=$('rv').querySelector(`[data-p="${side}.metar"]`);el.addEventListener('input',()=>{S.plan[side].wxSrc=el.value.trim()?'you':'';});}
   voicesNote();
 }
@@ -1845,6 +1903,19 @@ function wxStatus(){
   const one=a=>a.wxSrc?`${a.icao} live from ${a.wxSrc} at ${new Date(a.wxAt).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}`:`${a.icao} not live`;
   const why=(!p.dep.wxSrc||!p.arr.wxSrc)?wxWhy():'';
   return one(p.dep)+'. '+one(p.arr)+'.'+(why?' '+why:'');
+}
+function renderKokoro(){
+  const st=$('kkStatus'),btn=$('kkGet');if(!st)return;
+  if(KOKORO.ready){st.textContent=`Ready (${KOKORO.mode}). Controllers will use natural voices.`+(AZ.key?' Azure is set up too, so it is used first.':'');btn.classList.add('hidden');return;}
+  if(KOKORO.loading){st.textContent='Loading natural voices...';btn.classList.add('hidden');return;}
+  if(/claude/.test(location.hostname)){st.textContent='Natural voices need the GitHub version of Squawk.';btn.classList.add('hidden');return;}
+  st.textContent=kokoroBig()?'Most natural free option. About 330 MB one time on this computer (best quality), saved for next time.':'Most natural free option. About 90 MB one time, best on Wi-Fi, saved for next time.';
+  btn.classList.remove('hidden');
+  btn.onclick=async()=>{btn.disabled=true;const seen={};
+    try{await kokoroLoad(p=>{if(p&&p.status==='progress'&&p.total){seen[p.file]=[p.loaded,p.total];let a=0,b=0;for(const v of Object.values(seen)){a+=v[0];b+=v[1];}st.textContent=`Downloading natural voices: ${Math.round(a*100/b)}% (${Math.round(b/1048576)} MB)`;}});
+      voicesNote();const f=S.fac.twr;enqueueSpeech(f,spokenClean(f.name+', natural voices are ready.'));}
+    catch(e){st.textContent='Download failed. Check your connection and try again.';}
+    btn.disabled=false;renderKokoro();};
 }
 function neededPiper(){return [...new Set(['clr','app'].map(k=>S.fac[k].piper))];}
 async function renderVoiceModels(){
@@ -1888,7 +1959,7 @@ async function loadReviewWx(force){
   for(const side of ['dep','arr']){const el=$('rv').querySelector(`[data-p="${side}.metar"]`);if(el){el.value=S.plan[side].metar||'';el.placeholder='No live weather. Paste a METAR or leave blank for calm wind.';}}
   if($('wxStatus'))$('wxStatus').textContent=wxStatus();
 }
-function voiceLabel(f){const e=engineFor(f);if(e==='azure')return 'Azure '+azVoiceFor(f.region,f.vIdx).replace(/Neural$/,'');if(e==='piper')return 'Piper '+f.piper;if(e==='claude')return 'Claude natural voice';const v=f.voice;return v?v.name+' ('+v.lang+')'+(voiceScore(v)>=3?'':', basic quality'):'default';}
+function voiceLabel(f){const e=engineFor(f);if(e==='kokoro')return 'Kokoro '+kokoroVoiceFor(f.region,f.vIdx);if(e==='azure')return 'Azure '+azVoiceFor(f.region,f.vIdx).replace(/Neural$/,'');if(e==='piper')return 'Piper '+f.piper;if(e==='claude')return 'Claude natural voice';const v=f.voice;return v?v.name+' ('+v.lang+')'+(voiceScore(v)>=3?'':', basic quality'):'default';}
 function voicesNote(){
   if(!S.fac)return;
   if(VOICES.length||CAP.tts){$('rvVoices').textContent=`Departure voice: ${voiceLabel(S.fac.clr)}. Arrival voice: ${voiceLabel(S.fac.app)}.`+(!CAP.tts?' For more human voices, see the voice tip in Settings.':'');return;}
@@ -1978,6 +2049,7 @@ function init(){
   $('atisBtn').onclick=()=>{unlockAudio();playAtis();};$('atisBtn').title='Listen to ATIS on COM2 without changing COM1';
   $('sayAgainBtn').onclick=()=>{unlockAudio();if(S.last)atc(S.last.key,S.last.msg);};
   $('endBtn').onclick=()=>{clearTimers();S.phase='idle';if(TX.src){try{TX.src.stop();}catch(e){}}if(typeof speechSynthesis!=='undefined')speechSynthesis.cancel();show('setup');};
+  if(kokoroCached()&&(SET.engine==='auto'||SET.engine==='kokoro')&&!/claude/.test(location.hostname))kokoroLoad().then(()=>{renderKokoro();voicesNote();}).catch(()=>{});
   // Claude page capabilities (only exist when this page is opened as a Claude artifact)
   if(W.claude&&typeof W.claude.use==='function'){
     W.claude.use('dictation').then(d=>{if(d){CAP.dict=d;setupDict();}}).catch(()=>{});
