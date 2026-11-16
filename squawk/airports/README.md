@@ -8,3 +8,7 @@ One small JSON file per airport (`K/KSAN.json`, `E/EGLL.json`, ...) with the tax
 Fields: `n` nodes `[lat, lon, flags (1 = on runway, 2 = hold point), runway index]`, `e` edges `[node, node, taxiway name index, is pushback]`, `t` taxiway names, `p` parking `[name, node, pushback node]`, `r` runways `[le, he, le lat, le lon, he lat, he lon]`.
 
 Some airports have changed since 2017, so a few routes may not match the current layout.
+
+## Frequencies
+
+`freq/<first letter>.json` maps each airport to its real COM frequencies `[type, description, MHz]` from OurAirports `airport-frequencies.csv` (tower, ground, clearance, ATIS/AWOS, approach, departure, center). Squawk picks the one for your runway when an airport lists several.
