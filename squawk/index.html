@@ -31,7 +31,59 @@ details summary{cursor:pointer;color:var(--blue);margin:6px 0}
 a{color:var(--blue)}
 .hidden{display:none!important}
 /* flight */
-.tuner{position:sticky;top:0;z-index:2;background:linear-gradient(#0a0f13 80%,transparent);padding-bottom:8px}
+.tuner{position:relative;padding-bottom:8px}
+@font-face{font-family:'DSEG7';src:url(data:font/woff2;base64,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) format('woff2');font-weight:700}
+#rtpWrap,#acpWrap{width:100%;position:relative;overflow:hidden}
+.rtp,.acp{position:absolute;left:0;top:0;transform-origin:0 0;border-radius:6px;
+  background:linear-gradient(180deg,#b48a68 0%,#a77e5d 45%,#9a7354 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.25),inset 0 -2px 0 rgba(0,0,0,.25),0 2px 6px rgba(0,0,0,.5);
+  font-family:"Arial Narrow",Arial,Helvetica,sans-serif;color:#fff}
+.rtp{width:480px;height:240px}
+.acp{width:480px;height:104px}
+#acpWrap{margin-top:6px}
+.screw{position:absolute;width:13px;height:13px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#c47a52,#7a3f22 70%);box-shadow:0 1px 1px rgba(0,0,0,.5)}
+.screw:after{content:"";position:absolute;left:2px;right:2px;top:5.5px;height:2px;background:#4a2412;transform:rotate(-35deg)}
+.lcd{position:absolute;top:22px;width:172px;height:52px;background:#050505;border-radius:3px;
+  box-shadow:inset 0 2px 6px rgba(0,0,0,.9),0 0 0 3px #2b1d14,0 0 0 4px rgba(255,255,255,.12);overflow:hidden}
+.lcd:before{content:"";position:absolute;inset:0;background:linear-gradient(160deg,rgba(255,255,255,.07),transparent 40%)}
+.lcd .ghost,.lcd .digits{position:absolute;right:12px;top:9px;font-family:'DSEG7',ui-monospace,monospace;font-weight:700;font-size:28px;letter-spacing:1px}
+.lcd .ghost{color:#fff;opacity:.05}
+.lcd .digits{color:#eef3ee;text-shadow:0 0 6px rgba(225,240,230,.45)}
+.sensor{position:absolute;left:233px;top:38px;width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#333,#000 70%)}
+.plbl{position:absolute;font-size:17px;letter-spacing:.5px;font-weight:600;text-shadow:0 1px 0 rgba(0,0,0,.35)}
+.xfer{position:absolute;left:220px;top:80px;width:40px;height:28px;padding:0;border-radius:3px;background:#161616;border:2px solid #2c2c2c;box-shadow:0 2px 0 #000,inset 0 1px 0 rgba(255,255,255,.12);display:grid;place-items:center}
+.xfer:active{transform:translateY(1px)}
+.sbyline{position:absolute;left:362px;top:88px}
+.sub{position:absolute;left:22px;top:112px;width:300px;height:118px;border-radius:5px;
+  background:linear-gradient(180deg,#b88f6c,#a07858);box-shadow:0 2px 3px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.25)}
+.key{position:absolute;width:62px;height:42px;padding:0;border-radius:4px;background:linear-gradient(180deg,#232323,#121212);border:1px solid #000;
+  box-shadow:0 2px 0 #000,inset 0 1px 0 rgba(255,255,255,.1);color:#f3f3f3;font:600 15px "Arial Narrow",Arial,sans-serif;letter-spacing:.3px}
+.key:active{transform:translateY(1px);box-shadow:0 1px 0 #000}
+.key .lamp{position:absolute;left:16px;right:16px;top:5px;height:3px;border-radius:2px;background:#0d2a12}
+.key.on .lamp{background:#46ff6e;box-shadow:0 0 6px #46ff6e,0 0 2px #b9ffc7}
+.pnl{position:absolute;left:6px;top:64px;font-size:11px;line-height:1.05;font-weight:700}
+.hfsens{position:absolute;left:14px;top:4px;width:60px;text-align:center}
+.hfsens span{display:block;font-size:10px;font-weight:700;margin-top:1px}
+.wknob{margin:0 auto;border-radius:50%;background:repeating-conic-gradient(#f4f1ea 0 6deg,#d8d3c8 6deg 12deg);box-shadow:0 3px 4px rgba(0,0,0,.45),inset 0 0 0 3px #efebe2;position:relative}
+.wknob.sm{width:40px;height:40px}
+.wknob.sm i{position:absolute;left:17px;top:2px;width:6px;height:36px;background:#fbfaf6;border-radius:3px;box-shadow:0 0 2px rgba(0,0,0,.3)}
+#rtp .knob{position:absolute;left:356px;top:122px;width:100px;height:100px;border:none;border-radius:50%;
+  background:repeating-conic-gradient(#f6f3ec 0 5deg,#d9d4c9 5deg 10deg);box-shadow:0 4px 6px rgba(0,0,0,.5),inset 0 0 0 5px #efebe2}
+#rtp .knob .inner{width:56px;height:56px;margin:-28px 0 0 -28px;background:repeating-conic-gradient(#fbfaf6 0 7deg,#e1ddd3 7deg 14deg);border:none;box-shadow:0 3px 5px rgba(0,0,0,.45),inset 0 0 0 4px #f4f1ea}
+#rtp .knob .tick{background:#8a8378;width:3px;height:10px;top:6px}
+#rtp .knob .inner .tick{top:4px;height:8px}
+.acpch{position:absolute;top:12px;width:120px;text-align:center}
+.acpch[data-ch="L"]{left:30px}.acpch[data-ch="C"]{left:180px}.acpch[data-ch="R"]{left:330px}
+.acpch .win{margin:0 auto;width:72px;height:22px;background:#0b0b0b;border-radius:2px;box-shadow:inset 0 1px 3px #000,0 0 0 2px #3a281b;display:flex;justify-content:space-around;align-items:center;cursor:pointer}
+.acpch .win b{font:700 11px Arial,sans-serif;color:#2a2a2a}
+.acpch .win b.mic{width:12px;height:12px;border-radius:50%;line-height:12px;font-size:9px;background:#141414}
+.acpch.mic .win b.mic{background:#46ff6e;color:#063;box-shadow:0 0 6px #46ff6e}
+.acpch.rx .win b.rec{color:#f1f1f1;text-shadow:0 0 4px rgba(255,255,255,.6)}
+.acpch .mk{display:block;margin:6px auto 0;width:40px;height:40px;padding:0;border-radius:50%;border:none;background:radial-gradient(circle at 38% 32%,#3a3a3a,#0e0e0e 70%);box-shadow:0 3px 4px rgba(0,0,0,.6),inset 0 0 0 3px #1c1c1c}
+.acpch .mk:active{transform:translateY(1px)}
+.acphelp{position:absolute;left:0;right:0;bottom:4px;text-align:center;font-size:11px;color:#2d1b10;font-weight:600}
+.below{margin-top:6px}
+.below .note{font-size:12px;color:var(--mute)}
 .radio{background:#05090c;border:1px solid var(--line);border-radius:14px;padding:10px 12px}
 .rtop{display:flex;align-items:center;gap:10px}
 .rbox{flex:1;min-width:0}
@@ -207,20 +259,39 @@ td input{padding:6px 8px}
 <!-- ============ FLIGHT ============ -->
 <section id="flight" class="hidden">
   <div class="tuner">
-    <div class="radio">
-      <div class="rtop">
-        <div class="rbox"><div class="note">COM1 ACTIVE</div><div class="freq" id="rAct">---.---</div><div class="note" id="rActName"></div></div>
-        <button id="rSwap" class="swap" aria-label="Swap active and standby">&#8644;</button>
-        <div class="rbox"><div class="note">STANDBY</div><div class="freq sby" id="rSby">---.---</div><div class="note">set with the knob</div></div>
+    <div id="rtpWrap"><div id="rtp" class="rtp">
+      <i class="screw" style="left:10px;top:10px"></i><i class="screw" style="right:10px;top:10px"></i><i class="screw" style="left:10px;bottom:10px"></i><i class="screw" style="right:10px;bottom:10px"></i>
+      <div class="lcd" style="left:36px"><span class="ghost">888.888</span><span id="rAct" class="digits"></span></div>
+      <i class="sensor"></i>
+      <div class="lcd" style="left:272px"><span class="ghost">888.888</span><span id="rSby" class="digits"></span></div>
+      <span class="plbl" style="left:142px;top:84px">ACTIVE</span>
+      <button id="rSwap" class="xfer" aria-label="Transfer standby to active"><svg viewBox="0 0 24 10" width="22" height="10"><path d="M1 5h22M1 5l5-4M1 5l5 4M23 5l-5-4M23 5l-5 4" stroke="#fff" stroke-width="1.8" fill="none"/></svg></button>
+      <span class="plbl" style="left:282px;top:84px">STANDBY</span>
+      <svg class="sbyline" viewBox="0 0 120 40" width="120" height="40"><path d="M2 2h40 L70 30" stroke="#fff" stroke-width="1.6" fill="none"/><path d="M58 30a22 22 0 0 1 30-6" stroke="#fff" stroke-width="2" fill="none"/></svg>
+      <div class="sub">
+        <div class="hfsens"><div class="wknob sm"><i></i></div><span>HF SENS</span></div>
+        <button class="key" data-rad="L" style="left:78px;top:14px">VHF L<i class="lamp"></i></button>
+        <button class="key" data-rad="C" style="left:146px;top:14px">VHF C<i class="lamp"></i></button>
+        <button class="key" data-rad="R" style="left:214px;top:14px">VHF R<i class="lamp"></i></button>
+        <span class="pnl">P<br>N<br>L</span>
+        <button class="key" id="pnlOff" style="left:20px;top:66px">OFF<i class="lamp"></i></button>
+        <button class="key" data-rad="HFL" style="left:78px;top:66px">HF L<i class="lamp"></i></button>
+        <button class="key" data-rad="AM" style="left:146px;top:66px">AM<i class="lamp"></i></button>
+        <button class="key" data-rad="HFR" style="left:214px;top:66px">HF R<i class="lamp"></i></button>
       </div>
-      <div class="rbot">
-        <div class="knob" id="kOuter" aria-label="Outer knob, MHz"><div class="tick"></div><div class="inner" id="kInner" aria-label="Inner knob, kHz"><div class="tick"></div></div></div>
-        <div class="side">
-          <div class="row"><input id="rType" inputmode="decimal" placeholder="Type a frequency, e.g. 121.9"><button id="rTypeGo" style="flex:none">Tune</button></div>
-          <div class="note">Outer ring changes MHz, inner knob changes kHz. Drag to turn, or tap the right side to go up and the left side to go down. Then hit &#8644;.</div>
-          <div id="rWant" class="want"></div>
-        </div>
-      </div>
+      <div class="knob" id="kOuter" aria-label="Outer knob, MHz"><div class="tick"></div><div class="inner" id="kInner" aria-label="Inner knob, kHz"><div class="tick"></div></div></div>
+    </div></div>
+    <div id="acpWrap"><div id="acp" class="acp">
+      <i class="screw" style="left:8px;top:8px"></i><i class="screw" style="right:8px;top:8px"></i>
+      <div class="acpch" data-ch="L"><div class="win"><b class="mic">L</b><b class="rec">REC</b></div><button class="mk" data-mic="L" aria-label="Talk on VHF L"></button></div>
+      <div class="acpch" data-ch="C"><div class="win"><b class="mic">C</b><b class="rec">REC</b></div><button class="mk" data-mic="C" aria-label="Talk on VHF C"></button></div>
+      <div class="acpch" data-ch="R"><div class="win"><b class="mic">R</b><b class="rec">REC</b></div><button class="mk" data-mic="R" aria-label="Talk on VHF R"></button></div>
+      <div class="acphelp">Tap a knob to talk on that radio (green light). Tap its window to listen (REC).</div>
+    </div></div>
+    <div class="below">
+      <div class="note" id="rActName"></div>
+      <div class="row"><input id="rType" inputmode="decimal" placeholder="Type a frequency for the selected radio"><button id="rTypeGo" style="flex:none">Tune</button></div>
+      <div id="rWant" class="want"></div>
     </div>
     <div class="prog" id="prog"></div>
   </div>
@@ -840,7 +911,12 @@ function sayAloudBasic(f,text,claudeFirst){
 }
 
 /* ================= COM1 radio ================= */
-const RADIO={act:'',sby:'',check:!HEADLESS};
+const RADIOS={L:{act:'',sby:''},C:{act:'',sby:''},R:{act:'121.500',sby:''}};
+const RADIO={sel:'L',mic:'L',rx:{L:true,C:false,R:false},check:!HEADLESS,off:false,hf:'',
+  get act(){return RADIOS[this.sel].act;},set act(v){RADIOS[this.sel].act=v;},
+  get sby(){return RADIOS[this.sel].sby;},set sby(v){RADIOS[this.sel].sby=v;}};
+function micFreq(){return RADIOS[RADIO.mic].act;}
+function hearing(){return Object.keys(RADIOS).filter(r=>RADIO.rx[r]||r===RADIO.mic).map(r=>RADIOS[r].act);}
 function fnorm(f){const n=parseFloat(f);return isNaN(n)?'':n.toFixed(3);}
 function fshow(f){const n=parseFloat(f);return isNaN(n)?'---.---':n.toFixed(3);}
 function facOnFreq(f){
@@ -858,17 +934,17 @@ function parseFreqInput(s){
 function setActive(f,fromSwap){
   const prev=RADIO.act;RADIO.act=fnorm(f);if(!fromSwap&&prev)RADIO.sby=prev;
   renderRadio();
-  const k=facOnFreq(RADIO.act);
-  if(k==='datis'||k==='aatis'){playAtis(k==='datis'?'dep':'arr');}
+  if(RADIO.rx[RADIO.sel]||RADIO.sel===RADIO.mic)atisCheck(RADIO.act);
 }
-function swapRadio(){const a=RADIO.act;RADIO.act=RADIO.sby;RADIO.sby=a;setActive(RADIO.act,true);}
-function stepSby(which,dir){
+function atisCheck(f){const k=facOnFreq(f);if(k==='datis'||k==='aatis')playAtis(k==='datis'?'dep':'arr');}
+function swapRadio(){if(RADIO.off||RADIO.hf)return;const a=RADIO.act;RADIO.act=RADIO.sby;RADIO.sby=a;setActive(RADIO.act,true);}
+function stepSby(which,dir){if(RADIO.off||RADIO.hf)return;
   let n=parseFloat(RADIO.sby)||118;let mhz=Math.floor(n+1e-6),khz=Math.round((n-mhz)*1000);
   if(which==='outer'){mhz+=dir;if(mhz>136)mhz=118;if(mhz<118)mhz=136;}
   else{khz=Math.round(khz/25)*25+dir*25;if(khz>975)khz=0;if(khz<0)khz=975;}
   RADIO.sby=(mhz+khz/1000).toFixed(3);renderRadio();
 }
-function onFreq(key){return !RADIO.check||fnorm(RADIO.act)===fnorm(facOf(key).freq);}
+function onFreq(key){if(!RADIO.check)return true;const f=fnorm(facOf(key).freq);return hearing().some(x=>fnorm(x)===f);}
 
 /* ================= real taxi routes (OpenStreetMap) ================= */
 const TAXI={dep:null,arr:null,status:{dep:'',arr:''}};
@@ -1294,7 +1370,7 @@ function trafficTick(){
   if($('flight').classList.contains('hidden'))return;
   if(MIC.on||TX.n>0||Date.now()-TX.last<2500)return;
   if(S.pending&&Date.now()-(S.pendingAt||0)<12000)return;
-  const k=facOnFreq(RADIO.act);if(!k||/atis/.test(k))return;
+  const k=facOnFreq(micFreq());if(!k||/atis/.test(k))return;
   if(!TR.next){TR.next=Date.now()+gapFor(k);return;}
   if(Date.now()<TR.next)return;
   try{const ex=chatterFor(k);if(ex)playChatter(k,ex);}catch(e){console.warn('traffic',e);}
@@ -1312,7 +1388,7 @@ function trafficLabel(side){const lv=trafficLevel(S.plan[side].icao,TAXI[side]);
 function facOf(key){return S.fac[key];}
 function atc(key,msg){
   const f=facOf(key);S.last={key,msg};
-  if(!onFreq(key)){sys(`You missed a call from ${f.name}. You're tuned to ${fshow(RADIO.act)}, not ${fshow(f.freq)}.`);return speakQ;}
+  if(!onFreq(key)){sys(`You missed a call from ${f.name}. Your talk radio (VHF ${RADIO.mic}) is on ${fshow(micFreq())}, not ${fshow(f.freq)}.`);return speakQ;}
   ui.atc(f,msg);
   return enqueueSpeech(f,msg.s);
 }
@@ -1383,11 +1459,11 @@ function pilotSay(text){
   ui.pilot(text);
   const n=normText(text);
   if(RADIO.check){
-    const k=facOnFreq(RADIO.act);
+    const k=facOnFreq(micFreq());
     if(k==='gnd'&&S.phase==='clr'&&!S.pending)S.cur='gnd';
     if(k==='clr'&&S.phase==='clr'&&S.cur==='gnd'&&!S.pending)S.cur='clr';
     if(k!==S.cur&&!(S.pending&&k===S.pending.key)){
-      if(!k){sys(`No one answered on ${fshow(RADIO.act)}. Check your frequency.`);ui.render();return;}
+      if(!k){sys(`No one answered on ${fshow(micFreq())} (VHF ${RADIO.mic}). Check your frequency and which radio has the green mic light.`);ui.render();return;}
       if(k==='datis'||k==='aatis'){sys('That\'s the ATIS frequency. It only broadcasts, so no one can hear you.');ui.render();return;}
       const f=facOf(k),c=facOf(S.cur);
       atc(k,M(P_cs(),', ',f.name,', you should be with ',c.name,' on ',P_freq(c.freq,f.style),'.'));ui.render();return;
@@ -1761,16 +1837,23 @@ const ui={
 };
 function addMsg(cls,lab,text){const d=document.createElement('div');d.className='msg '+cls;if(lab){const l=document.createElement('div');l.className='lab';l.textContent=lab;d.appendChild(l);}const t=document.createElement('div');t.textContent=text;d.appendChild(t);$('log').appendChild(d);d.scrollIntoView({block:'nearest',behavior:'smooth'});}
 function show(id){for(const s of ['setup','review','flight'])$(s).classList.toggle('hidden',s!==id);W.scrollTo&&W.scrollTo(0,0);}
+function lcdText(f){const n=parseFloat(f);return isNaN(n)?'':n.toFixed(3);}
 function renderRadio(){
   if(HEADLESS||!S.fac)return;
-  $('rAct').textContent=fshow(RADIO.act);$('rSby').textContent=fshow(RADIO.sby);
-  const k=facOnFreq(RADIO.act);
-  $('rActName').textContent=k?facOf(k).name:'No station';
-  const c=facOf(S.cur),ok=fnorm(RADIO.act)===fnorm(c.freq);
+  const hf=RADIO.hf;
+  $('rAct').textContent=RADIO.off?'':hf?'-----':lcdText(RADIO.act);$('rSby').textContent=RADIO.off?'':hf?'-----':lcdText(RADIO.sby);
+  for(const el of document.querySelectorAll('#rtp [data-rad]'))el.classList.toggle('on',!RADIO.off&&(hf?el.dataset.rad===hf:el.dataset.rad===RADIO.sel));
+  $('pnlOff').classList.toggle('on',RADIO.off);
+  for(const ch of document.querySelectorAll('#acp .acpch')){const r=ch.dataset.ch;ch.classList.toggle('mic',RADIO.mic===r);ch.classList.toggle('rx',!!RADIO.rx[r]||RADIO.mic===r);}
+  const k=facOnFreq(micFreq());
+  const listening=Object.keys(RADIOS).filter(r=>r!==RADIO.mic&&RADIO.rx[r]).map(r=>{const kk=facOnFreq(RADIOS[r].act);return `VHF ${r} ${kk?facOf(kk).name:fshow(RADIOS[r].act)}`;});
+  $('rActName').textContent=`Tuning VHF ${RADIO.sel}. Talking on VHF ${RADIO.mic}: ${k?facOf(k).name:'no station'}.`+(listening.length?` Also listening: ${listening.join(', ')}.`:'');
+  const c=facOf(S.cur),ok=fnorm(micFreq())===fnorm(c.freq);
   const w=$('rWant');w.className='want'+(ok?' ok':'');
-  w.textContent=S.phase==='done'?'':ok?`On frequency with ${c.name}.`:`ATC wants you on ${c.name} ${fshow(c.freq)}.`;
+  w.textContent=S.phase==='done'?'':ok?`On frequency with ${c.name}.`:`ATC wants you on ${c.name} ${fshow(c.freq)} (talking on VHF ${RADIO.mic}).`;
   $('kOuter').style.transform=`rotate(${KNOB.outer}deg)`;$('kInner').style.transform=`rotate(${KNOB.inner-KNOB.outer}deg)`;
 }
+function fitPanels(){for(const [w,id,hgt] of [['rtpWrap','rtp',240],['acpWrap','acp',104]]){const W=$(w),P=$(id);if(!W||!P)continue;const s=Math.min(1.3,W.clientWidth/480);P.style.transform='scale('+s+')';W.style.height=(hgt*s)+'px';}}
 function renderChart(){
   const keys=['datis','clr','gnd','twr','dep','ctr1','ctr2','app','atwr','agnd','aatis'];
   $('fchart').innerHTML=keys.map(k=>`<tr data-k="${k}"><td>${esc(S.fac[k].name)}</td><td style="text-align:right;font-family:ui-monospace,monospace">${fshow(S.fac[k].freq)}</td></tr>`).join('');
@@ -2027,8 +2110,9 @@ function init(){
     S.f={};
     startFlight();S.f.appType=$('rvApp').value;
     $('log').innerHTML='';show('flight');startTraffic();
-    RADIO.act='';RADIO.sby=fnorm(facOf('datis').freq);renderChart();
-    sys(`Your radio is off frequency. Tune ${facOf('datis').name} on ${fshow(facOf('datis').freq)} for the weather, then ${facOf('clr').name} on ${fshow(facOf('clr').freq)} for your clearance. The frequency chart below lists them all.`);
+    RADIOS.L={act:'',sby:fnorm(facOf('clr').freq)};RADIOS.C={act:fnorm(facOf('datis').freq),sby:''};RADIOS.R={act:'121.500',sby:''};
+    RADIO.sel='L';RADIO.mic='L';RADIO.rx={L:true,C:false,R:false};RADIO.off=false;RADIO.hf='';renderChart();setTimeout(fitPanels,0);
+    sys(`VHF C is set to ${facOf('datis').name}. Tap its window on the audio panel (REC) to hear the weather. VHF L has ${facOf('clr').name} ${fshow(facOf('clr').freq)} in standby: press the transfer key, then call for your clearance.`);
     micNote();renderFlight();
   };
   // flight
@@ -2040,6 +2124,12 @@ function init(){
   document.addEventListener('keyup',e=>{if(e.code!=='Space'||$('flight').classList.contains('hidden'))return;e.preventDefault();pttUp();});
   window.addEventListener('blur',()=>pttUp());
   wireKnob($('kOuter'),'outer');wireKnob($('kInner'),'inner');
+  window.addEventListener('resize',fitPanels);fitPanels();
+  for(const el of document.querySelectorAll('#rtp [data-rad]'))el.onclick=()=>{unlockAudio();radioClick();const r=el.dataset.rad;
+    if(RADIOS[r]){RADIO.hf='';RADIO.sel=r;}else{RADIO.hf=r;sys(r==='AM'?'AM is not used for ATC here.':'HF radios are for oceanic flights. Not modeled yet.');}renderRadio();};
+  $('pnlOff').onclick=()=>{radioClick();RADIO.off=!RADIO.off;renderRadio();};
+  for(const b of document.querySelectorAll('#acp [data-mic]'))b.onclick=()=>{unlockAudio();radioClick();RADIO.mic=b.dataset.mic;RADIO.rx[RADIO.mic]=true;renderRadio();};
+  for(const ch of document.querySelectorAll('#acp .acpch .win'))ch.onclick=()=>{unlockAudio();radioClick();const r=ch.parentElement.dataset.ch;if(r===RADIO.mic)return;RADIO.rx[r]=!RADIO.rx[r];renderRadio();if(RADIO.rx[r])atisCheck(RADIOS[r].act);};
   $('rSwap').onclick=()=>{unlockAudio();swapRadio();};
   const tune=()=>{unlockAudio();const f=parseFreqInput($('rType').value);if(!f){$('rType').value='';$('rType').placeholder='Use 118.000 to 136.975';return;}$('rType').value='';setActive(f);};
   $('rTypeGo').onclick=tune;$('rType').onkeydown=e=>{if(e.key==='Enter')tune();};
