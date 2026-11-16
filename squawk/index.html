@@ -64,6 +64,9 @@ a{color:var(--blue)}
 .msg.atc{align-self:flex-start;background:var(--panel);border:1px solid var(--line)}
 .msg.pilot{align-self:flex-end;background:#13283f;border:1px solid #1e3b5c}
 .msg.pilot .lab{color:var(--blue)}
+.msg.other{align-self:flex-start;background:transparent;border:1px dashed #26333e;color:#9fb0bf;font-size:13px;padding:6px 10px;max-width:84%}
+.msg.other .lab{color:#7d8f9e}
+.msg.opilot{align-self:flex-end}
 .msg.sys{align-self:center;background:none;color:var(--mute);font-size:13px;text-align:center;max-width:95%}
 .msg .mark{font-size:12px;margin-top:4px}
 .hint{background:#141d12;border:1px solid #2a3d22;border-radius:12px;padding:10px 12px;margin-bottom:10px}
@@ -160,6 +163,11 @@ td input{padding:6px 8px}
           <option value="strict">Strict (numbers and key words)</option>
           <option value="relaxed">Relaxed (numbers only)</option>
         </select></div>
+      <div><label for="s_traffic">Other traffic on frequency</label>
+        <select id="s_traffic"><option value="realistic">Realistic for the airport</option><option value="reduced">Reduced</option><option value="off">Off</option></select></div>
+      <div><label>&nbsp;</label>
+        <label style="display:flex;gap:8px;align-items:center;margin:0"><input id="s_vatsim" type="checkbox" style="width:auto"> Include live VATSIM flights</label>
+        <label style="display:flex;gap:8px;align-items:center;margin:4px 0 0"><input id="s_showtraffic" type="checkbox" style="width:auto"> Show other traffic in the log</label></div>
       <div><label for="s_rate">Controller speed</label><input id="s_rate" type="range" min="0.8" max="1.35" step="0.05"></div>
       <div><label>&nbsp;</label>
         <label style="display:flex;gap:8px;align-items:center;margin:0"><input id="s_radio" type="checkbox" style="width:auto"> Radio static</label>
@@ -261,7 +269,7 @@ function pick(a){return a[Math.floor(Math.random()*a.length)];}
 function M(...parts){let t='',s='';for(const p of parts){if(p==null||p===false)continue;if(typeof p==='string'){t+=p;s+=p;}else{t+=p.t;s+=p.s;}}return{t:t.replace(/\s+/g,' ').trim(),s:spokenClean(s)};}
 
 /* ================= airlines and callsigns ================= */
-const AIRLINES={AAL:'American',DAL:'Delta',UAL:'United',SWA:'Southwest',JBU:'JetBlue',ASA:'Alaska',NKS:'Spirit Wings',FFT:'Frontier Flight',AAY:'Allegiant',HAL:'Hawaiian',SKW:'SkyWest',RPA:'Brickyard',ENY:'Envoy',EDV:'Endeavor',JIA:'Blue Streak',PDT:'Piedmont',ASH:'Air Shuttle',GJS:'Lindbergh',QXE:'Horizon',FDX:'FedEx',UPS:'UPS',GTI:'Giant',ACA:'Air Canada',WJA:'WestJet',ROU:'Rouge',BAW:'Speedbird',VIR:'Virgin',EZY:'Easy',RYR:'Ryanair',DLH:'Lufthansa',AFR:'Air France',KLM:'KLM',SWR:'Swiss',AUA:'Austrian',IBE:'Iberia',VLG:'Vueling',TAP:'Air Portugal',EIN:'Shamrock',SAS:'Scandinavian',FIN:'Finnair',THY:'Turkish',UAE:'Emirates',QTR:'Qatari',ETD:'Etihad',SIA:'Singapore',CPA:'Cathay',JAL:'Japan Air',ANA:'All Nippon',KAL:'Korean Air',QFA:'Qantas',ANZ:'New Zealand',AIC:'Air India',IGO:'IFly',JST:'Jetstar',EWG:'Eurowings',WZZ:'Wizz Air',AMX:'Aeromexico',VOI:'Volaris',AVA:'Avianca',CSN:'China Southern',CCA:'Air China',CES:'China Eastern'};
+const AIRLINES={AAL:'American',DAL:'Delta',UAL:'United',SWA:'Southwest',JBU:'JetBlue',ASA:'Alaska',NKS:'Spirit Wings',FFT:'Frontier Flight',AAY:'Allegiant',HAL:'Hawaiian',SKW:'SkyWest',RPA:'Brickyard',ENY:'Envoy',EDV:'Endeavor',JIA:'Blue Streak',PDT:'Piedmont',ASH:'Air Shuttle',GJS:'Lindbergh',QXE:'Horizon',FDX:'FedEx',UPS:'UPS',GTI:'Giant',ACA:'Air Canada',WJA:'WestJet',ROU:'Rouge',BAW:'Speedbird',VIR:'Virgin',EZY:'Easy',RYR:'Ryanair',DLH:'Lufthansa',AFR:'Air France',KLM:'KLM',SWR:'Swiss',AUA:'Austrian',IBE:'Iberia',VLG:'Vueling',TAP:'Air Portugal',EIN:'Shamrock',SAS:'Scandinavian',FIN:'Finnair',THY:'Turkish',UAE:'Emirates',QTR:'Qatari',ETD:'Etihad',SIA:'Singapore',CPA:'Cathay',JAL:'Japan Air',ANA:'All Nippon',KAL:'Korean Air',QFA:'Qantas',ANZ:'New Zealand',AIC:'Air India',IGO:'IFly',JST:'Jetstar',EWG:'Eurowings',WZZ:'Wizz Air',AMX:'Aeromexico',VOI:'Volaris',AVA:'Avianca',JZA:'Jazz',POE:'Porter',SCX:'Sun Country',TRA:'Transavia',CFG:'Condor',AEA:'Europa',FDB:'Skydubai',VOZ:'Velocity',ITY:'Itarrow',BEL:'Beeline',AEE:'Aegean',LOT:'Pollot',TSC:'Air Transat',CSN:'China Southern',CCA:'Air China',CES:'China Eastern'};
 const HEAVY=new Set('B744 B748 B74F B762 B763 B764 B772 B773 B77L B77W B778 B779 B788 B789 B78X A306 A310 A332 A333 A338 A339 A342 A343 A345 A346 A359 A35K MD11 DC10 IL96 A124 C17 C5M KC10 B752'.split(' '));
 const SUPER=new Set(['A388','A225']);
 function pairW(p){if(p==='00')return 'hundred';if(p[0]==='0')return 'oh '+ONES[+p[1]];return nw(+p);}
@@ -543,7 +551,7 @@ function numEq(a,b){const lz=x=>x.replace(/^0+(?=\d)/,'');const d=x=>lz(x.replac
 function hasNum(set,v){for(const c of set)if(numEq(c,String(v)))return true;return false;}
 
 /* ================= state ================= */
-const DEF={engine:'auto',accent:'local',rate:1.0,strict:'strict',ai:true,radio:true,sbUser:''};
+const DEF={traffic:'realistic',vatsim:true,showTraffic:true,engine:'auto',accent:'local',rate:1.0,strict:'strict',ai:true,radio:true,sbUser:''};
 let SET=Object.assign({},DEF);
 try{Object.assign(SET,JSON.parse(localStorage.getItem('squawk.settings')||'{}'));}catch(e){}
 function saveSet(){try{localStorage.setItem('squawk.settings',JSON.stringify(SET));}catch(e){}}
@@ -728,7 +736,7 @@ async function playAudio(blob,f,isAzure){
     src.playbackRate.value=(f.pitch||1)*(isAzure?1:SET.rate);
     let out=src;
     if(SET.radio){const hp=actx.createBiquadFilter();hp.type='highpass';hp.frequency.value=320;const lp=actx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=3300;const g=actx.createGain();g.gain.value=1.5;src.connect(hp);hp.connect(lp);lp.connect(g);out=g;}
-    out.connect(actx.destination);src.onended=()=>res();radioClick();src.start();
+    out.connect(actx.destination);TX.src=src;src.onended=()=>{if(TX.src===src)TX.src=null;res();};radioClick();src.start();
   });
 }
 function engineFor(f){
@@ -976,7 +984,7 @@ function findPark(G,q){
 function gateSay(ref,style){
   if(!ref)return '';const m=String(ref).match(/(gate|stand|spot)\s*([A-Z]?\d+[A-Z]?)\s*$/i);
   if(m)return m[1].toLowerCase()+' '+m[2].toUpperCase();
-  if(/^[A-Z]{0,2}\d{1,3}[A-Z]?$/i.test(ref))return (style==='faa'?'gate ':'stand ')+ref.toUpperCase();
+  if(/^[A-Z]{0,2}\s?\d{1,3}[A-Z]?$/i.test(ref)||/^[A-Z]{1,2}$/i.test(ref))return (style==='faa'?'gate ':'stand ')+ref.toUpperCase().replace(/\s/g,'');
   return String(ref).toLowerCase();
 }
 async function loadTaxi(side,force){
@@ -994,19 +1002,269 @@ async function loadTaxi(side,force){
 }
 function P_twys(list){return{t:list.join(', '),s:list.map(x=>digitsW(x)).join(', ')};}
 
+
+/* ================= other traffic on the frequency ================= */
+// Airline mix at hubs (rough share of flights). GA = small private planes.
+const HUBS_RAW=`KCLT:3:AAL55,JIA15,PDT8,ENY3,DAL5,UAL4,SWA3,JBU2,FFT2,NKS2,BAW1,DLH1
+KATL:3:DAL60,EDV10,SKW8,SWA8,AAL4,UAL4,NKS2,FFT2,KLM1,AFR1
+KDFW:3:AAL60,ENY15,SKW5,DAL5,UAL5,NKS3,FFT2,BAW1,QFA1
+KORD:3:UAL40,AAL30,SKW10,ENY5,DAL5,SWA3,NKS3,DLH1,BAW1
+KDEN:3:UAL40,SWA30,SKW10,FFT8,AAL5,DAL5
+KIAH:3:UAL60,SKW10,ASH5,AAL5,DAL5,SWA5,NKS3
+KEWR:3:UAL55,RPA5,JBU5,DAL5,AAL5,NKS5,DLH1,BAW1,SAS1
+KJFK:3:JBU30,DAL25,AAL15,EDV5,BAW3,VIR2,AFR2,DLH2,UAE2,QTR1
+KLGA:3:DAL30,AAL25,EDV10,RPA5,UAL5,SWA5,JBU5,SKW5,ASA2
+KBOS:3:JBU30,DAL20,AAL15,UAL10,SWA5,RPA5,BAW2,EIN2
+KSFO:3:UAL50,SKW10,ASA8,AAL6,DAL6,SWA5,JAL1,CPA1,BAW1
+KLAX:3:DAL15,AAL15,UAL15,SWA15,ASA8,SKW8,JBU3,QFA2,BAW2,ANZ1
+KSEA:3:ASA45,DAL25,QXE10,SKW5,SWA5,UAL5,AAL5
+KMSP:3:DAL55,EDV15,SKW10,SCX8,SWA5,UAL3,AAL3
+KDTW:3:DAL55,EDV15,SKW10,NKS8,SWA4,AAL4,UAL4
+KPHX:3:AAL40,SWA35,SKW5,DAL5,UAL5,FFT3
+KLAS:3:SWA45,NKS10,FFT8,AAL8,DAL8,UAL8,ASA5
+KMIA:3:AAL60,ENY10,DAL5,UAL5,AVA3,BAW2,IBE1
+KFLL:3:JBU25,NKS25,SWA15,DAL10,AAL10,UAL5
+KMCO:3:SWA25,DAL15,JBU12,NKS10,AAL10,UAL10,FFT8
+KPHL:3:AAL60,PDT10,ENY5,SWA5,DAL5,UAL5,FFT3
+KDCA:3:AAL45,PDT10,DAL15,UAL8,SWA8,JBU5,RPA5
+KIAD:3:UAL50,SKW15,AAL5,DAL5,BAW3,DLH2,AFR1,UAE1
+KSLC:3:DAL60,SKW20,SWA5,AAL5,UAL5
+KMDW:3:SWA85,DAL5,AAY5
+KBWI:3:SWA65,AAL8,DAL8,UAL6,NKS5
+KSAN:3:SWA40,ASA15,AAL10,DAL10,UAL10,SKW5,BAW1
+KTPA:3:SWA30,DAL15,AAL12,JBU10,UAL10,NKS8
+KBNA:2:SWA45,AAL15,DAL15,UAL10,GA5
+KAUS:2:SWA35,AAL20,DAL15,UAL15,GA5
+KRDU:2:AAL25,DAL25,SWA20,UAL10,JBU5,GA5
+CYYZ:3:ACA55,WJA15,JZA10,POE5,AAL3,DAL3,UAL3,BAW2
+CYVR:3:ACA50,WJA25,JZA8,ASA5,UAL3,QFA1,CPA1
+CYUL:3:ACA55,TSC15,JZA10,WJA5,AFR3
+EGLL:3:BAW50,VIR8,AAL4,UAL4,DAL3,DLH4,AFR3,KLM3,UAE4,QTR3,SIA2,EIN4,IBE2,SWR2
+EGKK:3:EZY45,BAW20,WZZ8,RYR5,VIR3
+EGSS:3:RYR70,EZY10,TRA5,GA5
+EGCC:3:EZY25,RYR20,BAW10,EIN5,UAE5,QTR3,KLM5,DLH5
+EIDW:3:EIN40,RYR40,BAW5,DLH3,AAL3,UAL3
+LFPG:3:AFR55,EZY8,DLH4,KLM4,BAW4,UAE3,DAL3,AAL2
+EDDF:3:DLH60,CFG10,UAE3,UAL3,BAW3,AFR3,KLM3,SWR2
+EDDM:3:DLH60,CFG5,BAW4,AFR4,KLM4,UAE3,SWR3
+EHAM:3:KLM55,TRA10,EZY8,DLH3,BAW3,AFR3,DAL3
+LSZH:3:SWR60,EZY5,DLH5,BAW4,AFR3,UAE3
+LOWW:3:AUA55,WZZ8,RYR8,DLH5,EZY5
+LEMD:3:IBE40,AEA15,VLG10,RYR10,AFR3,BAW3
+LEBL:3:VLG40,RYR15,IBE10,EZY10,BAW3
+OMDB:3:UAE70,FDB15,QTR2,BAW2,AIC3,IGO3
+OTHH:3:QTR80,BAW3,UAE2
+YSSY:3:QFA45,VOZ20,JST15,ANZ3,UAE2,SIA2
+RJTT:3:ANA45,JAL45
+WSSS:3:SIA55,QFA3,CPA3,UAE3
+VHHH:3:CPA55,SIA3,QFA2,UAE2`;
+const HUBS={};for(const line of HUBS_RAW.split('\n')){const [ic,lv,mix]=line.split(':');if(!mix)continue;HUBS[ic]={level:+lv,mix:mix.split(',').map(x=>{const m=x.match(/^([A-Z]+)(\d+)$/);return m?[m[1],+m[2]]:null;}).filter(Boolean)};}
+const CLASS_B=new Set('KATL KBOS KBWI KCLT KCVG KDCA KDEN KDFW KDTW KEWR KHNL KIAD KIAH KJFK KLAS KLAX KLGA KMCI KMCO KMEM KMIA KMSP KMSY KORD KPHL KPHX KPIT KSAN KSEA KSFO KSLC KSTL KTPA KHOU KDAL KMDW KCLE KADW'.split(' '));
+const FLAG={France:'AFR',Germany:'DLH',Netherlands:'KLM',Spain:'IBE','Canary Islands':'IBE',Italy:'ITY',Switzerland:'SWR',Austria:'AUA',Belgium:'BEL',Denmark:'SAS',Sweden:'SAS',Norway:'SAS',Finland:'FIN',Portugal:'TAP',Turkey:'THY',Greece:'AEE',Poland:'LOT','United Kingdom':'BAW',Ireland:'EIN','United Arab Emirates':'UAE',Qatar:'QTR',India:'AIC',Singapore:'SIA','Hong Kong':'CPA',Japan:'JAL','South Korea':'KAL',Australia:'QFA','New Zealand':'ANZ',Mexico:'AMX',Colombia:'AVA',China:'CCA',Canada:'ACA'};
+const HOME={AFR:'LFPG',DLH:'EDDF',CFG:'EDDF',KLM:'EHAM',TRA:'EHAM',IBE:'LEMD',VLG:'LEBL',AEA:'LEMD',SWR:'LSZH',AUA:'LOWW',SAS:'EKCH',FIN:'EFHK',TAP:'LPPT',THY:'LTFM',ITY:'LIRF',BEL:'EBBR',AEE:'LGAV',LOT:'EPWA',BAW:'EGLL',VIR:'EGLL',EZY:'EGKK',RYR:'EIDW',EIN:'EIDW',WZZ:'LHBP',UAE:'OMDB',FDB:'OMDB',QTR:'OTHH',ETD:'OMAA',SIA:'WSSS',CPA:'VHHH',JAL:'RJTT',ANA:'RJTT',KAL:'RKSI',QFA:'YSSY',JST:'YSSY',VOZ:'YSSY',ANZ:'NZAA',AIC:'VIDP',IGO:'VIDP',ACA:'CYYZ',WJA:'CYYC',JZA:'CYYZ',POE:'CYYZ',TSC:'CYUL',AMX:'MMMX',VOI:'MMMX',AVA:'SKBO',CCA:'ZBAA',CES:'ZSPD',CSN:'ZGGG'};
+const TYPES={AAL:'A321 B738 A319 B772 B789',DAL:'A321 B739 A320 B752 A359',UAL:'B39M B738 A320 B772 B789',SWA:'B737 B38M',JBU:'A320 A321 BCS3',ASA:'B739 B39M',NKS:'A20N A321',FFT:'A20N A21N',AAY:'A320',HAL:'A21N A332',SKW:'CRJ2 CRJ9 E175',RPA:'E175',ENY:'E175',EDV:'CRJ9',JIA:'CRJ9 CRJ7',PDT:'E145 E175',ASH:'CRJ9',GJS:'E175',QXE:'E175',SCX:'B738',FDX:'B763 MD11',UPS:'B763 B748',ACA:'A320 B38M B789 A333',WJA:'B38M B738 B789',JZA:'DH8D CRJ9',POE:'DH8D BCS3',TSC:'A321 A333',BAW:'A320 A321 B772 A35K B789',VIR:'A35K B789',EZY:'A320 A21N',RYR:'B738 B38M',EIN:'A320 A21N A333',WZZ:'A21N A321',TRA:'B738',CFG:'A320 A339',DLH:'A320 A321 A359 B748',AFR:'A320 A321 B77W A359',KLM:'B738 E190 B789',SWR:'A320 BCS3 B77W',AUA:'A320 E195 B763',IBE:'A320 A321 A359',VLG:'A320 A321',AEA:'B738 B789',UAE:'B77W A388',QTR:'A359 B77W',FDB:'B38M',QFA:'B738 A332 B789',JST:'A320 A321',VOZ:'B738',JAL:'B738 B789',ANA:'B788 A321',SIA:'A359 B78X',CPA:'A35K B77W',AIC:'A320 B788',IGO:'A20N'};
+const HEAVY_INTL='B77W A359 B789 A333 B763'.split(' ');
+const GA_TYPES='C172 PA28 SR22 C182 BE36 PC12 C25A CL35'.split(' ');
+function continent(icao){const c=String(icao||'K')[0];return /[EL BU]/.test(c)?'EU':/[KCPTM]/.test(c)?'NA':c==='S'?'SA':c==='O'?'ME':/[VWRZ]/.test(c)?'AS':/[YN]/.test(c)?'OC':'AF';}
+function trafficLevel(icao,G){
+  const h=HUBS[icao];if(h)return h.level;if(CLASS_B.has(icao))return 3;
+  const rw=G?G.runways.length:0,gates=G?G.parking.length:0;
+  if(gates>120||rw>=4)return 3;if(gates>30||rw>=2)return 2;if(!G&&AIRPORTS[icao])return 2;return 1;
+}
+function mixFor(icao,level){
+  if(HUBS[icao])return HUBS[icao].mix;
+  const r=regionFor(icao);
+  if(r.prefix==='K'||r.prefix==='PA'||r.prefix==='PH')return level>=2?[['AAL',15],['DAL',15],['UAL',15],['SWA',15],['SKW',8],['RPA',5],['ENY',5],['JBU',4],['ASA',3],['NKS',3],['FFT',3],['GA',10]]:[['GA',70],['SKW',10],['SWA',8],['AAL',6],['DAL',6]];
+  if(r.prefix==='C')return level>=2?[['ACA',40],['WJA',25],['JZA',15],['POE',5],['GA',10],['UAL',3],['AAL',2]]:[['GA',60],['JZA',20],['WJA',10],['ACA',10]];
+  const flag=FLAG[r.country];
+  const euro=/^[EL]/.test(icao);
+  const base=[[flag||'BAW',40]];
+  if(euro)base.push(['RYR',15],['EZY',10],['WZZ',5],['DLH',5],['AFR',4],['KLM',4],['BAW',4]);else base.push(['UAE',6],['QTR',5],['BAW',4],['DLH',4],['SIA',3],['AFR',3]);
+  if(level<2)base.push(['GA',40]);
+  return base;
+}
+function wpick(list){const tot=list.reduce((s,x)=>s+x[1],0);let r=Math.random()*tot;for(const x of list){r-=x[1];if(r<=0)return x[0];}return list[0][0];}
+function randOf(a){return a[Math.floor(Math.random()*a.length)];}
+const TR={live:{},next:0,used:new Set(),timer:null,level:{dep:2,arr:2},liveCount:{dep:0,arr:0}};
+const TX={n:0,last:0,src:null};
+function otherAirport(not){const ks=Object.keys(AIRPORTS).filter(k=>k!==not&&/^[KCE]/.test(k));return randOf(ks);}
+function synthFlight(side){
+  const ic=S.plan[side].icao;const lv=TR.level[side];const code=wpick(mixFor(ic,lv));
+  if(code==='GA'){
+    const r=regionFor(ic);let cs;
+    if(r.style==='faa'){const L='ABCDEFGHJKLMNPRSTUVWXYZ';cs='N'+(100+Math.floor(Math.random()*899))+L[Math.floor(Math.random()*L.length)]+L[Math.floor(Math.random()*L.length)];}
+    else{const L='ABCDEFGHIJKLMNOPQRSTUVWXYZ';cs=(r.prefix==='EG'?'G':r.prefix[0]==='L'?'F':'D')+[0,1,2,3].map(()=>L[Math.floor(Math.random()*26)]).join('');}
+    return{cs,type:randOf(GA_TYPES),home:ic,ga:true};
+  }
+  const home=HOME[code]||'KATL';
+  const far=continent(home)!==continent(ic);
+  // mostly narrowbodies at home; a widebody now and then
+  let types=far?HEAVY_INTL:(TYPES[code]||'A320 B738 A321').split(' ');
+  if(!far){const narrow=types.filter(t=>!HEAVY.has(t)&&!SUPER.has(t));if(narrow.length&&Math.random()<0.85)types=narrow;}
+  const regional=/^(SKW|RPA|ENY|EDV|JIA|PDT|ASH|GJS|QXE|JZA)$/.test(code);
+  const num=regional?3000+Math.floor(Math.random()*2999):far?1+Math.floor(Math.random()*400):100+Math.floor(Math.random()*2400);
+  return{cs:code+num,type:randOf(types),home,other:far?home:null};
+}
+function nextFlight(side,dir){
+  const live=(TR.live[side]||[]).filter(f=>f.dir===dir&&!TR.used.has(f.cs)&&f.cs!==S.csInfo.code);
+  let f=live.length&&Math.random()<0.7?randOf(live):synthFlight(side);
+  TR.used.add(f.cs);if(TR.used.size>60)TR.used=new Set([...TR.used].slice(-30));
+  const st=facOf(side==='dep'?'clr':'app').style;
+  f.info=callsignInfo(f.cs,f.type,st==='faa');
+  if(!f.other){const here=S.plan[side].icao;const pool=Object.keys(AIRPORTS).filter(k=>k!==here&&continent(k)===continent(here));f.other=f.home&&f.home!==here&&!f.ga?f.home:(pool.length?randOf(pool):otherAirport(here));}
+  f.otherCall=(AIRPORTS[f.other]||{}).call||f.other;
+  return f;
+}
+// Real online flights from the VATSIM network
+async function loadVatsim(){
+  TR.live={dep:[],arr:[]};if(!SET.vatsim||HEADLESS)return;
+  try{
+    const ctl=new AbortController();const tm=setTimeout(()=>ctl.abort(),12000);
+    const j=await (await fetch('https://data.vatsim.net/v3/vatsim-data.json',{signal:ctl.signal})).json();clearTimeout(tm);
+    for(const side of ['dep','arr']){const ic=S.plan[side].icao;
+      for(const p of j.pilots||[]){const fp=p.flight_plan;if(!fp||!p.callsign)continue;
+        const cs=String(p.callsign).toUpperCase().replace(/[^A-Z0-9]/g,'');if(!/^([A-Z]{3}\d|N\d|[A-Z]{4,5}$)/.test(cs))continue;
+        const type=String(fp.aircraft_short||fp.aircraft_faa||'').split('/')[0].toUpperCase();
+        if(fp.departure===ic)TR.live[side].push({cs,type,other:fp.arrival,dir:'dep',live:true,home:HOME[cs.slice(0,3)]||ic});
+        else if(fp.arrival===ic)TR.live[side].push({cs,type,other:fp.departure,dir:'arr',live:true,home:HOME[cs.slice(0,3)]||ic});
+      }
+      TR.liveCount[side]=TR.live[side].length;
+    }
+  }catch(e){}
+}
+function pilotObj(f){
+  const region=regionFor(f.home||S.plan.dep.icao);const idx=10+(hash(f.cs)%7);
+  const o={name:f.info.t,region,style:region.style,vIdx:idx,pitch:0.9+(hash(f.cs+'p')%21)/100};
+  o.voice=pickVoice(langsFor(region),idx);o.piper=piperVoiceFor(region);return o;
+}
+function sideOfKey(k){return ['clr','gnd','twr','dep','ctr1','datis'].includes(k)?'dep':'arr';}
+function gapFor(k){
+  const lv=k==='ctr1'||k==='ctr2'?2:TR.level[sideOfKey(k)];
+  const base=lv>=3?[5,11]:lv===2?[14,28]:[35,75];
+  const mul=SET.traffic==='reduced'?2.2:1;
+  return (base[0]+Math.random()*(base[1]-base[0]))*1000*mul;
+}
+// Build one exchange (a few transmissions) for the controller on frequency `k`.
+function chatterFor(k){
+  const side=sideOfKey(k),ap=S.plan[side],fac=facOf(k),st=fac.style,ta=TA(side),G=TAXI[side];
+  const rw=P_rwy(ap.rwy||'27'),w=P_wind(metar(side).wind,st);const L=S.atis[side];
+  const say=(f,...p)=>({who:'pilot',f,m:M(...p.flat(3))}),atcL=(...p)=>({who:'atc',m:M(...p.flat(3))});
+  const C=f=>f.info;const lines=[];const roll=Math.random();
+  const pickPark=f=>{const P=G.parking;const ga=f.ga||/^(C172|PA28|SR22|C182|BE36)$/.test(f.type);
+    let c=ga?P.filter(x=>/\b(ga|general|fbo|ramp|tie|apron|aviation)\b/i.test(x.ref)):P.filter(x=>/gate|stand|^[A-Z]{0,2}\s?\d/i.test(x.ref)&&!/cargo|maint|fbo|general|heli|coast|uscg|military/i.test(x.ref));
+    return c.length?randOf(c).ref:null;};
+  const route=(f,arr)=>{
+    const pk=G&&G.parking.length?pickPark(f):null;
+    if(pk){
+      const park=pk;
+      const pl=arr?planArrivalTaxi(G,ap.rwy,park,false):planDepartureTaxi(G,park,ap.rwy);
+      const st0=pl&&pl.steps&&pl.steps[0];
+      if(st0&&st0.twys.length)return{tw:P_twys(st0.twys),hs:st0.holdShort?P_rwy(rwyEndRef(st0.holdShort)):null,gate:gateSay(arr?pl.to:park,st),exit:arr?pl.exit:null};
+    }
+    const tw=G&&G.names&&G.names.length?P_twys([randOf(G.names.filter(n=>/^[A-Z]$/.test(n)).concat(G.names.slice(0,3)))]):{t:'the parallel taxiway',s:'the parallel taxiway'};
+    const synthGate=f.ga?(st==='faa'?'the F B O':'the general aviation apron'):(st==='faa'?'gate '+'ABCDE'[Math.floor(Math.random()*5)]+(1+Math.floor(Math.random()*35)):'stand '+(100+Math.floor(Math.random()*400)));
+    return{tw,hs:null,gate:synthGate,exit:null};
+  };
+  const freqSay=()=>P_freq((118+Math.random()*17.9).toFixed(3).replace(/\d$/,'0'),st);
+  if(k==='clr'){
+    const f=nextFlight(side,'dep');const r=route(f,false);const sq=P_sq(String(2000+Math.floor(Math.random()*5000)).replace(/[89]/g,'7'));
+    const a=P_alt(Math.min(5000,ta),ta);
+    if(TR.level[side]>=3&&roll<0.35&&!f.ga){lines.push(say(f,fac.name,', ',C(f),', ',r.gate,', with P D C, squawk ',sq,'.'),atcL(C(f),', readback correct.'));return{lines};}
+    if(f.ga&&st==='faa'){const dir=randOf(['north','south','east','west']);const sqv=P_sq('0'+(400+Math.floor(Math.random()*77)));
+      lines.push(say(f,fac.name,', ',C(f),', ',r.gate,', V F R departure to the ',dir,', at ',P_alt(3500+Math.floor(Math.random()*3)*1000,ta),'.'),
+        atcL(C(f),', maintain V F R at or below ',P_alt(2500,ta),', departure frequency ',P_freq(facOf('dep').freq,st),', squawk ',sqv,'.'),
+        say(f,'At or below ',P_alt(2500,ta),', ',P_freq(facOf('dep').freq,st),', squawk ',sqv,', ',C(f),'.'));return{lines};}
+    lines.push(st==='faa'?say(f,fac.name,', ',C(f),', ',r.gate,', I F R to ',f.otherCall,'.'):say(f,fac.name,', ',C(f),', ',r.gate,', information ',{t:L,s:PHON_S[L]},', request I F R clearance to ',f.otherCall,'.'));
+    lines.push(atcL(C(f),', cleared to ',f.otherCall,' via radar vectors, then as filed. Maintain ',a,'. Squawk ',sq,'.'));
+    lines.push(say(f,'Cleared to ',f.otherCall,', maintain ',a,', squawk ',sq,', ',C(f),'.'));
+    return{lines};
+  }
+  if(k==='gnd'||k==='agnd'){
+    const arr=k==='agnd'||(roll<0.35&&TR.level[side]>=2);const f=nextFlight(side,arr?'arr':'dep');const r=route(f,arr);
+    if(!arr&&roll>0.75){lines.push(say(f,fac.name,', ',C(f),', ',r.gate,', request push back.'),atcL(C(f),', push back approved.'),say(f,'Push approved, ',C(f),'.'));return{lines};}
+    if(arr){
+      lines.push(say(f,fac.name,', ',C(f),', clear of runway ',rw,r.exit?[' at ',{t:r.exit,s:digitsW(r.exit)}]:'','.'));
+      lines.push(atcL(C(f),', ',fac.name,', taxi to ',r.gate,' via ',r.tw,'.'));
+      lines.push(say(f,r.gate,' via ',r.tw,', ',C(f),'.'));return{lines:lines.map(x=>({...x,m:x.m.t?x.m:M(x.m)}))};
+    }
+    lines.push(say(f,fac.name,', ',C(f),', ',r.gate,', ready to taxi',st==='faa'?'':' with information '+L,'.'));
+    lines.push(st==='faa'?atcL(C(f),', runway ',rw,', taxi via ',r.tw,r.hs?[', hold short of runway ',r.hs]:'','.'):atcL(C(f),', taxi to holding point runway ',rw,' via ',r.tw,'.'));
+    lines.push(say(f,'Runway ',rw,', via ',r.tw,r.hs?[', hold short runway ',r.hs]:'',', ',C(f),'.'));
+    return{lines};
+  }
+  if(k==='twr'||k==='atwr'){
+    const landing=k==='atwr'?roll<0.7:roll<0.45;
+    if(landing){const f=nextFlight(side,'arr');const mi=3+Math.floor(Math.random()*8);
+      lines.push(say(f,fac.name,', ',C(f),', ',{t:String(mi),s:nw(mi)},' mile final runway ',rw,'.'));
+      if(TR.level[side]>=3&&Math.random()<0.3)lines.push(atcL(C(f),', ',fac.name,', continue, number two, traffic to follow is on a three mile final.'),say(f,'Continue, ',C(f),'.'));
+      else lines.push(atcL(C(f),', ',fac.name,', runway ',rw,', ',w,', cleared to land.'),say(f,'Cleared to land runway ',rw,', ',C(f),'.'));
+      return{lines};}
+    const f=nextFlight(side,'dep');
+    if(roll>0.85){lines.push(atcL(C(f),', contact departure. Good day.'),say(f,'Over to departure, ',C(f),', good day.'));return{lines};}
+    if(roll>0.7){lines.push(atcL(C(f),', runway ',rw,', line up and wait.'),say(f,'Line up and wait runway ',rw,', ',C(f),'.'));return{lines};}
+    lines.push(atcL(C(f),', runway ',rw,', ',w,', cleared for takeoff.'),say(f,'Cleared for takeoff runway ',rw,', ',C(f),'.'));return{lines};
+  }
+  if(k==='dep'){
+    const f=nextFlight(side,'dep');const pass=P_alt(1000*(2+Math.floor(Math.random()*3)),ta),to=P_alt(Math.min(5000,ta),ta),up=P_alt(Math.min(S.plan.cruise,st==='faa'?17000:15000),ta);
+    if(roll<0.55){lines.push(say(f,fac.name,', ',C(f),', ',pass,' for ',to,'.'),atcL(C(f),', ',fac.name,', ',st==='faa'?'radar contact. Climb and maintain ':'identified. Climb ',up,'.'),say(f,'Climb and maintain ',up,', ',C(f),'.'));return{lines};}
+    if(roll<0.8){const hd=P_hdg(Math.floor(Math.random()*36)*10);lines.push(atcL(C(f),', turn left ',hd,'.'),say(f,'Left ',hd,', ',C(f),'.'));return{lines};}
+    const fq=freqSay();lines.push(atcL(C(f),', contact center ',fq,'.'),say(f,fq,', ',C(f),'.'));return{lines};
+  }
+  if(k==='ctr1'||k==='ctr2'){
+    const f=nextFlight(side,roll<0.5?'dep':'arr');const lvl=P_alt(1000*(30+Math.floor(Math.random()*9)),18000);
+    if(roll<0.4){lines.push(say(f,fac.name,', ',C(f),', ',lvl,'.'),atcL(C(f),', ',fac.name,', roger.'));return{lines};}
+    if(roll<0.7){const d=P_alt(1000*(20+Math.floor(Math.random()*8)),18000);lines.push(atcL(C(f),', descend and maintain ',d,'.'),say(f,'Descend and maintain ',d,', ',C(f),'.'));return{lines};}
+    const fq=freqSay();lines.push(atcL(C(f),', contact ',fac.name.replace(/ (Center|Centre|Control|Radar)$/,'')+' '+(fac.name.match(/(Center|Centre|Control|Radar)$/)||['Center'])[0],' ',fq,'.'),say(f,fq,', ',C(f),'.'));return{lines};
+  }
+  if(k==='app'){
+    const f=nextFlight(side,'arr');const al=P_altim(metar(side),st);
+    if(roll<0.4){const thr=P_alt(1000*(8+Math.floor(Math.random()*5)),ta);lines.push(say(f,fac.name,', ',C(f),', descending through ',thr,', with information ',{t:L,s:PHON_S[L]},'.'),atcL(C(f),', ',fac.name,', ',al,', expect I L S runway ',rw,'.'),say(f,'Expect I L S ',rw,', ',C(f),'.'));return{lines};}
+    if(roll<0.75){const hd=P_hdg(rwyHdg(ap.rwy)+randOf([-90,90,180,-30,30])),a=P_alt(1000*(3+Math.floor(Math.random()*4)),ta);lines.push(atcL(C(f),', turn ',randOf(['left','right']),' ',hd,', descend and maintain ',a,'.'),say(f,hd,', down to ',a,', ',C(f),'.'));return{lines};}
+    const fq=P_freq(facOf('atwr').freq,st);lines.push(atcL(C(f),', contact tower ',fq,'.'),say(f,'Tower ',fq,', ',C(f),'.'));return{lines};
+  }
+  return null;
+}
+function enqueueSpeech(f,text){TX.n++;speakQ=speakQ.then(()=>sayAloud(f,text)).catch(()=>{}).then(()=>{TX.n--;TX.last=Date.now();});return speakQ;}
+function playChatter(k,ex){
+  const fac=facOf(k);
+  for(const ln of ex.lines){
+    const m=ln.m&&ln.m.t!=null?ln.m:M(ln.m);
+    if(ln.who==='atc'){ui.other(fac.name,m.t,true);enqueueSpeech(fac,m.s);}
+    else{const po=pilotObj(ln.f);ui.other(ln.f.info.t+(ln.f.live?' (VATSIM)':''),m.t,false);enqueueSpeech(po,m.s);}
+    speakQ=speakQ.then(()=>new Promise(r=>setTimeout(r,250+Math.random()*500)));
+  }
+}
+function trafficTick(){
+  if(HEADLESS||SET.traffic==='off'||!S.fac||S.phase==='idle'||S.phase==='done')return;
+  if($('flight').classList.contains('hidden'))return;
+  if(MIC.on||TX.n>0||Date.now()-TX.last<2500)return;
+  if(S.pending&&Date.now()-(S.pendingAt||0)<12000)return;
+  const k=facOnFreq(RADIO.act);if(!k||/atis/.test(k))return;
+  if(!TR.next){TR.next=Date.now()+gapFor(k);return;}
+  if(Date.now()<TR.next)return;
+  try{const ex=chatterFor(k);if(ex)playChatter(k,ex);}catch(e){console.warn('traffic',e);}
+  TR.next=Date.now()+gapFor(k);
+}
+function startTraffic(){
+  TR.level.dep=trafficLevel(S.plan.dep.icao,TAXI.dep);TR.level.arr=trafficLevel(S.plan.arr.icao,TAXI.arr);TR.next=0;TR.used=new Set();
+  loadVatsim();
+  if(!HEADLESS&&!TR.timer)TR.timer=setInterval(trafficTick,1000);
+  if(!HEADLESS&&!TR.vt)TR.vt=setInterval(()=>{if(S.phase!=='done'&&S.phase!=='idle')loadVatsim();},180000);
+}
+function trafficLabel(side){const lv=trafficLevel(S.plan[side].icao,TAXI[side]);const h=HUBS[S.plan[side].icao];const top=h?(AIRLINES[h.mix[0][0]]||h.mix[0][0]):'';return (lv>=3?'Busy':lv===2?'Moderate':'Light')+(top?`, mostly ${top}`:'');}
+
 /* ================= core radio ================= */
 function facOf(key){return S.fac[key];}
 function atc(key,msg){
   const f=facOf(key);S.last={key,msg};
   if(!onFreq(key)){sys(`You missed a call from ${f.name}. You're tuned to ${fshow(RADIO.act)}, not ${fshow(f.freq)}.`);return speakQ;}
   ui.atc(f,msg);
-  speakQ=speakQ.then(()=>sayAloud(f,msg.s));
-  return speakQ;
+  return enqueueSpeech(f,msg.s);
 }
 function sys(t){ui.sys(t);}
 function issue(key,msg,req,ok,rb){
   atc(key,msg);
-  if(req&&req.length)S.pending={req,ok,rb,key,tries:0};
+  if(req&&req.length){S.pending={req,ok,rb,key,tries:0};S.pendingAt=Date.now();}
   else{S.pending=null;if(ok)ok();}
   ui.render();
 }
@@ -1160,6 +1418,14 @@ const HANDLERS={
     if(S.f.tkoClr)return false;
     if(!(RX.ready.test(n)||RX.checkin.test(n)||/tower|departure|runway/.test(n)))return false;
     const st=facOf('twr').style,rw=P_rwy(S.plan.dep.rwy);
+    if(!S.f.held&&TR.level.dep>=3&&SET.traffic!=='off'&&Math.random()<0.35){
+      S.f.held=true;
+      issue('twr',M(P_cs(),', ',facOf('twr').name,', hold short runway ',rw,', landing traffic.'),
+        [R_num(rw.v,'runway '+rw.t,'runway '+rw.s),R_re(/hold(ing)? short/,'hold short')],
+        ()=>later(14000,()=>{if(Math.random()<0.5){S.f.luaw=true;issue('twr',M(P_cs(),', runway ',rw,', line up and wait.'),[R_num(rw.v,'runway '+rw.t,'runway '+rw.s),R_re(/line up|lining up/,'line up and wait')],()=>later(9000,takeoffClearance),`Runway ${rw.t}, line up and wait, ${S.csInfo.t}.`);}else takeoffClearance();}),
+        `Holding short runway ${rw.t}, ${S.csInfo.t}.`);
+      return;
+    }
     if(!S.f.luaw&&Math.random()<0.4){
       S.f.luaw=true;
       issue('twr',st==='faa'?M(P_cs(),', ',facOf('twr').name,', runway ',rw,', line up and wait.',Math.random()<0.5?' Traffic a Boeing 737, six mile final.':''):M(P_cs(),', line up runway ',rw,' and wait.'),
@@ -1427,6 +1693,7 @@ const ui={
   atc(f,msg){if(HEADLESS){(W.__log=W.__log||[]).push('ATC '+f.name+' ['+(f.region.langs[0])+']: '+msg.t+'\n      SPOKEN: '+msg.s);return;}addMsg('atc',f.name,msg.t);},
   pilot(t){if(HEADLESS){(W.__log=W.__log||[]).push('PILOT: '+t);return;}addMsg('pilot',S.csInfo?S.csInfo.t:'You',t);},
   sys(t){if(HEADLESS){(W.__log=W.__log||[]).push('SYS '+t);return;}addMsg('sys','',t);},
+  other(lab,t,isAtc){if(HEADLESS){(W.__log=W.__log||[]).push('  ~ '+lab+': '+t);return;}if(!SET.showTraffic)return;addMsg('other '+(isAtc?'oatc':'opilot'),lab,t);},
   mark(ok,t){if(HEADLESS){(W.__log=W.__log||[]).push((ok?'  OK ':'  MISS ')+t);return;}const el=[...document.querySelectorAll('#log .pilot')].pop();if(el){const m=document.createElement('div');m.className='mark';m.style.color=ok?'var(--green)':'var(--red)';m.textContent=(ok?'✓ ':'✗ ')+t;el.appendChild(m);}},
   thinking(on){if(HEADLESS)return;$('partial').textContent=on?'ATC is thinking...':'';},
   render(){if(HEADLESS)return;renderFlight();},
@@ -1494,6 +1761,7 @@ function pttDown(){
   if(MIC.on)return;
   unlockAudio();radioClick();
   if(typeof speechSynthesis!=='undefined')speechSynthesis.cancel();
+  if(TX.src){try{TX.src.stop();}catch(e){}}
   MIC.heard='';MIC.tmp='';MIC.held=true;MIC.at=Date.now();
   if(CAP.dict){
     CAP.dict.start().then(()=>{if(!MIC.held)CAP.dict.stop().catch(()=>{});}).catch(e=>{MIC.on=false;renderFlight();if(e&&e.code==='not_granted'){MIC.blocked=true;micNote();}});
@@ -1550,6 +1818,7 @@ function renderReview(){
     <div><label>Callsign</label><input data-p="callsign" value="${esc(p.callsign)}"></div>
   </div>
   ${(!p.dep.known&&p.src!=='SimBrief')||(!p.arr.known&&p.src!=='SimBrief')?`<p class="err" style="margin-top:8px">I don't know what ATC calls ${[(!p.dep.known?p.dep.icao:''),(!p.arr.known?p.arr.icao:'')].filter(Boolean).join(' or ')}. Type the city or airport name above so it doesn't get spelled out.</p>`:''}
+  <label style="margin-top:10px">Other traffic</label><div id="trStatus" class="muted"></div>
   <label style="margin-top:10px">Voice models</label><div id="vmStatus" class="muted"></div>
   <button id="vmGet" class="hidden" style="margin-top:6px">Download voice models</button>
   <div class="row" style="align-items:flex-end;margin-top:10px"><div><label style="margin:0">Taxi routes</label><div id="taxiStatus" class="muted">Checking for real taxiway maps...</div></div><button id="taxiRetry" style="flex:none">Retry</button></div>
@@ -1591,6 +1860,7 @@ async function renderVoiceModels(){
 }
 function renderTaxiReview(){
   if(!$('taxiStatus'))return;
+  if($('trStatus'))$('trStatus').textContent=`${S.plan.dep.icao}: ${trafficLabel('dep')}. ${S.plan.arr.icao}: ${trafficLabel('arr')}.`+(SET.traffic==='off'?' (Turned off in Settings.)':'');
   $('taxiStatus').textContent=`${S.plan.dep.icao}: ${TAXI.status.dep} ${S.plan.arr.icao}: ${TAXI.status.arr}`;
   if((TAXI.dep&&TAXI.dep.src==='bundled')||(TAXI.arr&&TAXI.arr.src==='bundled')){
     const gateBox=(G,side)=>{if(!G||!G.parking.length)return '';
@@ -1636,6 +1906,9 @@ function init(){
   $('az_test').onclick=async()=>{azSave();unlockAudio();if(!AZ.key){$('az_status').textContent='Paste a key first.';return;}$('az_status').textContent='Testing...';
     try{const b=await azSynth('Speedbird one two three, runway two seven, cleared for takeoff.','en-GB-RyanNeural');await playAudio(b,{pitch:1},true);$('az_status').textContent='Azure works.';}
     catch(e){$('az_status').textContent=e.message==='auth'?'Azure rejected the key. Check the key and that the region matches your Speech resource.':'Could not reach Azure from this page ('+e.message+'). On the Claude page outside requests are blocked, so use the GitHub version.';}};
+  $('s_traffic').value=SET.traffic;$('s_traffic').onchange=e=>{SET.traffic=e.target.value;saveSet();};
+  $('s_vatsim').checked=SET.vatsim;$('s_vatsim').onchange=e=>{SET.vatsim=e.target.checked;saveSet();};
+  $('s_showtraffic').checked=SET.showTraffic;$('s_showtraffic').onchange=e=>{SET.showTraffic=e.target.checked;saveSet();};
   $('s_engine').value=SET.engine;$('s_engine').onchange=e=>{SET.engine=e.target.value;saveSet();voicesNote();};
   $('s_accent').value=SET.accent;$('s_strict').value=SET.strict;$('s_rate').value=SET.rate;$('s_radio').checked=SET.radio;$('s_ai').checked=SET.ai;$('sbUser').value=SET.sbUser||'';
   $('s_accent').onchange=e=>{SET.accent=e.target.value;saveSet();assignVoices();voicesNote();};
@@ -1682,7 +1955,7 @@ function init(){
     if(!S.plan.dep.rwy||!S.plan.arr.rwy){$('rvVoices').innerHTML='<span class="err">Add both runways first.</span>';return;}
     S.f={};
     startFlight();S.f.appType=$('rvApp').value;
-    $('log').innerHTML='';show('flight');
+    $('log').innerHTML='';show('flight');startTraffic();
     RADIO.act='';RADIO.sby=fnorm(facOf('datis').freq);renderChart();
     sys(`Your radio is off frequency. Tune ${facOf('datis').name} on ${fshow(facOf('datis').freq)} for the weather, then ${facOf('clr').name} on ${fshow(facOf('clr').freq)} for your clearance. The frequency chart below lists them all.`);
     micNote();renderFlight();
@@ -1704,7 +1977,7 @@ function init(){
   $('hintSend').onclick=()=>{unlockAudio();const h=hint();pilotSay(h.replace(/^Read back: /,''));};
   $('atisBtn').onclick=()=>{unlockAudio();playAtis();};$('atisBtn').title='Listen to ATIS on COM2 without changing COM1';
   $('sayAgainBtn').onclick=()=>{unlockAudio();if(S.last)atc(S.last.key,S.last.msg);};
-  $('endBtn').onclick=()=>{clearTimers();if(typeof speechSynthesis!=='undefined')speechSynthesis.cancel();show('setup');};
+  $('endBtn').onclick=()=>{clearTimers();S.phase='idle';if(TX.src){try{TX.src.stop();}catch(e){}}if(typeof speechSynthesis!=='undefined')speechSynthesis.cancel();show('setup');};
   // Claude page capabilities (only exist when this page is opened as a Claude artifact)
   if(W.claude&&typeof W.claude.use==='function'){
     W.claude.use('dictation').then(d=>{if(d){CAP.dict=d;setupDict();}}).catch(()=>{});
