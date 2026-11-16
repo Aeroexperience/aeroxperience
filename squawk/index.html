@@ -93,19 +93,7 @@ td input{padding:6px 8px}
 <!-- ============ SETUP ============ -->
 <section id="setup">
   <div class="card">
-    <h2>1. Paste your route</h2>
-    <p class="muted">Copy the route from SimBrief (or any flight plan) and paste it here. It should start with your departure airport and runway and end with your arrival, like <code>KSAN/27 N0497F330 ZZOOO4 MTBAL ... NUGR1H EGLL/09L</code>.</p>
-    <textarea id="rt_route" placeholder="KSAN/27 N0497F330 ZZOOO4 MTBAL DCT ... EGLL/09L"></textarea>
-    <div class="row" style="margin-top:8px">
-      <div><label for="rt_cs">Callsign</label><input id="rt_cs" placeholder="DAL123 or N123AB" autocomplete="off"></div>
-      <div><label for="rt_type">Aircraft type</label><input id="rt_type" placeholder="B77W" autocomplete="off"></div>
-    </div>
-    <button id="rt_go" class="primary" style="margin-top:10px;width:100%">Load route</button>
-    <div id="rt_err" class="err" style="margin-top:6px"></div>
-  </div>
-
-  <details class="card">
-    <summary>Or load straight from SimBrief</summary>
+    <h2>1. Load your SimBrief flight</h2>
     <p class="muted">Plan the flight on simbrief.com and import that same plan into MSFS 2024 with the SimBrief button on the World Map. Then the sim and this app fly the same route.</p>
     <label for="sbUser">SimBrief username or Pilot ID</label>
     <div class="row"><input id="sbUser" placeholder="e.g. samarth" autocomplete="off"><button id="sbLoad" class="primary" style="flex:none">Load</button></div>
@@ -115,6 +103,18 @@ td input{padding:6px 8px}
       <textarea id="sbPaste" placeholder="Paste the SimBrief text here"></textarea>
       <button id="sbPasteLoad" class="primary" style="margin-top:8px">Use pasted plan</button>
     </div>
+  </div>
+
+  <details class="card">
+    <summary>Or paste a route</summary>
+    <p class="muted">Copy the route from SimBrief (or any flight plan) and paste it here. It should start with your departure airport and runway and end with your arrival, like <code>KSAN/27 N0497F330 ZZOOO4 MTBAL ... NUGR1H EGLL/09L</code>.</p>
+    <textarea id="rt_route" placeholder="KSAN/27 N0497F330 ZZOOO4 MTBAL DCT ... EGLL/09L"></textarea>
+    <div class="row" style="margin-top:8px">
+      <div><label for="rt_cs">Callsign</label><input id="rt_cs" placeholder="DAL123 or N123AB" autocomplete="off"></div>
+      <div><label for="rt_type">Aircraft type</label><input id="rt_type" placeholder="B77W" autocomplete="off"></div>
+    </div>
+    <button id="rt_go" class="primary" style="margin-top:10px;width:100%">Load route</button>
+    <div id="rt_err" class="err" style="margin-top:6px"></div>
   </details>
   <details class="card">
     <summary>Or enter the flight by hand</summary>
