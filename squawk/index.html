@@ -221,6 +221,8 @@ td input{padding:6px 8px}
       <div><label>&nbsp;</label>
         <label style="display:flex;gap:8px;align-items:center;margin:0"><input id="s_vatsim" type="checkbox" style="width:auto"> Include live VATSIM flights</label>
         <label style="display:flex;gap:8px;align-items:center;margin:4px 0 0"><input id="s_showtraffic" type="checkbox" style="width:auto"> Show other traffic in the log</label></div>
+      <div><label for="s_buzz">Radio sound</label>
+        <select id="s_buzz"><option value="light">Light (clearer)</option><option value="real">Real airband (buzzy)</option><option value="rough">Rough (busy frequency, weak signal)</option></select></div>
       <div><label for="s_rate">Controller speed</label><input id="s_rate" type="range" min="0.8" max="1.35" step="0.05"></div>
       <div><label>&nbsp;</label>
         <label style="display:flex;gap:8px;align-items:center;margin:0"><input id="s_radio" type="checkbox" style="width:auto"> Radio static</label>
@@ -623,7 +625,7 @@ function numEq(a,b){const lz=x=>x.replace(/^0+(?=\d)/,'');const d=x=>lz(x.replac
 function hasNum(set,v){for(const c of set)if(numEq(c,String(v)))return true;return false;}
 
 /* ================= state ================= */
-const DEF={traffic:'realistic',vatsim:true,showTraffic:true,engine:'auto',accent:'local',rate:1.0,strict:'strict',ai:true,radio:true,sbUser:''};
+const DEF={traffic:'realistic',vatsim:true,showTraffic:true,engine:'auto',accent:'local',rate:1.0,strict:'strict',ai:true,radio:true,buzz:'real',sbUser:''};
 let SET=Object.assign({},DEF);
 try{Object.assign(SET,JSON.parse(localStorage.getItem('squawk.settings')||'{}'));}catch(e){}
 function saveSet(){try{localStorage.setItem('squawk.settings',JSON.stringify(SET));}catch(e){}}
@@ -678,21 +680,59 @@ function fromManual(v){
 function fakeFreq(seed,lo,hi){const steps=Math.floor((hi-lo)/0.025);return(lo+(hash(seed)%steps)*0.025).toFixed(3);}
 // Real frequencies from OurAirports, bundled next to this page (airports/freq/K.json, ...).
 const FREQ_CACHE={};
+// OurAirports drops the last digit on some channels (128.32 for 128.325). Put it back.
+function fixMHz(f){const t=Math.round(f*1000);return(t%10===0&&(t%100===20||t%100===70))?(t+5)/1000:f;}
+function getJson(url){const ctl=new AbortController();const tm=setTimeout(()=>ctl.abort(),8000);
+  return fetch(url,{signal:ctl.signal}).then(r=>r.ok?r.json():{}).catch(()=>({})).finally(()=>clearTimeout(tm));}
 async function realFreqs(icao){
   const ch=String(icao||'?')[0];
   try{
-    if(!FREQ_CACHE[ch]){const ctl=new AbortController();const tm=setTimeout(()=>ctl.abort(),8000);
-      FREQ_CACHE[ch]=fetch(`airports/freq/${ch}.json`,{signal:ctl.signal}).then(r=>r.ok?r.json():{}).catch(()=>({})).finally(()=>clearTimeout(tm));}
-    const d=await FREQ_CACHE[ch];return d[icao]||null;
+    if(!FREQ_CACHE[ch])FREQ_CACHE[ch]=getJson(`airports/freq/${ch}.json`);
+    const d=(await FREQ_CACHE[ch])[icao];if(!d)return null;
+    // US airports: FAA NASR data {f:[...], t: tower call, a: approach call, d: departure call}
+    if(!Array.isArray(d)){const l=d.f.map(x=>{const y=[...x];y.faa=true;return y;});l.meta={t:d.t,a:d.a,d:d.d,h:d.h};return l;}
+    return d.map(x=>[x[0],x[1],fixMHz(x[2])]);
   }catch(e){return null;}
 }
-// Pick the best entry: right type, COM band, and when an airport has several, the one for your runway.
+// FAA radio call (all caps) to how it is said: O HARE -> O'Hare, SOCAL -> SoCal
+function niceCall(c){if(!c)return '';const S={'O HARE':"O'Hare",SOCAL:'SoCal',NORCAL:'NorCal'};return S[c]||titleCase(c.toLowerCase());}
+// Departure frequency for your SID, or arrival frequency for your STAR, when the FAA lists one
+function pickProc(list,kind,proc,rwy,brgv){
+  if(!list||!proc)return null;const base=String(proc).toUpperCase().replace(/\d.*$/,'');if(base.length<3)return null;
+  let c=list.filter(x=>x[0]===kind&&x[2]>=118&&x[2]<137&&String(x[1]).toUpperCase().startsWith(base+' '));
+  if(!c.length)return null;
+  if(rwy){const sc=c.map(x=>rwyScore(x[1],rwy));const top=Math.max(0,...sc);c=top>0?c.filter((x,i)=>sc[i]===top):c.filter(x=>!/RWY/i.test(x[1]));if(!c.length)return null;}
+  if(brgv!=null&&c.length>1){const ok=c.filter(x=>{const s=sectorOf(x);return s&&s.b&&inArc(brgv,s.b);});if(ok.length)c=ok;}
+  return c[0];
+}
+// Sector: [from,to] bearing range and low/high altitude, from the entry or read from its description.
+function sectorOf(x){
+  if(x[3])return x[3];
+  const d=String(x[1]),m=d.match(/\b(\d{3})\s*°?\s*-\s*(\d{3})\s*°?/);if(!m)return null;
+  return{b:[+m[1],+m[2]],alt:/ABOVE/i.test(d)?'high':/BELOW|AND BLW/i.test(d)?'low':undefined};
+}
+function inArc(b,arc){if(!arc)return false;let [f,t]=arc;b=((b%360)+360)%360;if(t===360)t=359.999;return f<=t?b>=f&&b<=t:b>=f||b<=t;}
+// Runway match that knows 01L from 01R: 2 = exact, 1 = same number with no side given, 0 = no match.
+function rwyScore(desc,rwy){
+  const m=String(desc).toUpperCase().match(/(?:RWY|RWAY|RUNWAY|RY)S?\s*(.*)/);if(!m||!rwy)return 0;
+  const n=parseInt(rwy,10),side=(String(rwy).match(/[LRC]$/i)||[''])[0].toUpperCase();let best=0;
+  for(const r of m[1].matchAll(/\b0?(\d{1,2})([LRC]?)\b/g)){if(+r[1]!==n)continue;if(r[2]===side)return 2;if(!r[2]||!side)best=Math.max(best,1);}
+  return best;
+}
+// Pick the best entry: right type, COM band, your runway, and your sector (direction and altitude).
 function pickFreq(list,types,o={}){
   if(!list)return null;
   let c=list.filter(x=>types.includes(String(x[0]).toUpperCase())&&x[2]>=118&&x[2]<137);
   if(o.not)c=c.filter(x=>!o.not.test(x[1]));
+  // Class B/C airspace channels only when the airport lists no regular approach/departure channel
+  {const main=c.filter(x=>!/^(CLASS [BC]|TRSA)\b/.test(x[1]));if(main.length)c=main;}
   if(o.prefer){const p=c.filter(x=>o.prefer.test(x[1]));if(p.length)c=p;}
-  if(o.rwy){const n=parseInt(o.rwy,10);const p=c.filter(x=>{const m=String(x[1]).match(/(?:RWY|RWAY|RUNWAY|RY)\s*0?(\d{1,2})[LRC]?\s*[-\/]\s*0?(\d{1,2})/i)||String(x[1]).match(/(?:RWY|RWAY|RUNWAY|RY)\s*0?(\d{1,2})/i);return m&&(+m[1]===n||+m[2]===n);});if(p.length)c=p;}
+  if(o.rwy){const sc=c.map(x=>rwyScore(x[1],o.rwy));const top=Math.max(0,...sc);if(top>0)c=c.filter((x,i)=>sc[i]===top);}
+  if(o.brg!=null&&c.length>1){
+    const ok=c.filter(x=>{const s=sectorOf(x);return s&&inArc(o.brg,s.b)&&(!o.alt||!s.alt||s.alt===o.alt);});
+    if(ok.length)c=ok;
+    else{const any=c.filter(x=>{const s=sectorOf(x);return s&&inArc(o.brg,s.b);});if(any.length)c=any;else{const ns=c.filter(x=>!sectorOf(x));if(ns.length)c=ns;}}
+  }
   return c[0]||null;
 }
 // Facility names that aren't the city: SoCal Approach, Potomac, NorCal, Heathrow Director...
@@ -743,21 +783,26 @@ function assignVoices(){if(!S.fac)return;for(const f of Object.values(S.fac)){f.
 async function buildFacilities(p){
   const dr=regionFor(p.dep.icao),ar=regionFor(p.arr.icao);
   const [rd,ra]=await Promise.all([realFreqs(p.dep.icao),realFreqs(p.arr.icao)]);
-  const mk=(key,name,region,vIdx,entry,lo,hi)=>({key,name,region,style:region.style,vIdx,freq:fmtFreq(entry?entry[2].toFixed(3):fakeFreq(p.dep.icao+p.arr.icao+key,lo,hi)),est:!entry,src:entry?entry[1]:'',pitch:[1,.93,1.07,.97,1.04,.95,1.05,.98,1.02,1][vIdx%10]});
+  const mk=(key,name,region,vIdx,entry,lo,hi)=>({key,name,region,style:region.style,vIdx,freq:fmtFreq(entry?entry[2].toFixed(3):fakeFreq(p.dep.icao+p.arr.icao+key,lo,hi)),est:!entry,src:entry?entry[1]+(entry.faa?' (FAA)':''):'',pitch:[1,.93,1.07,.97,1.04,.95,1.05,.98,1.02,1][vIdx%10]});
   const dn=p.dep.call,an=p.arr.call;
   const fd=dr.style==='faa',fa=ar.style==='faa';
+  // Which way you leave and where you arrive from, for sectorized approach/departure frequencies
+  const has=a=>a&&a.lat!=null&&a.lon!=null&&!isNaN(a.lat)&&!isNaN(a.lon);
+  const rh=r=>{const n=parseInt(r,10);return n?n*10:null;};
+  const outB=has(p.dep)&&has(p.arr)?brg(p.dep,p.arr):rh(p.dep.rwy);
+  const inB=has(p.dep)&&has(p.arr)?brg(p.arr,p.dep):(rh(p.arr.rwy)!=null?(rh(p.arr.rwy)+180)%360:null);
   let c1=p.firs[0]&&FIRNAMES[p.firs[0]]?FIRNAMES[p.firs[0]]:centreFor(p.dep);
   let c2=p.firs.length>1&&FIRNAMES[p.firs[p.firs.length-1]]?FIRNAMES[p.firs[p.firs.length-1]]:centreFor(p.arr);
   const E={
     clr:pickFreq(rd,['CLD','DEL','CLNC','CD','PTD']),
-    gnd:pickFreq(rd,['GND'],{rwy:p.dep.rwy}),
+    gnd:pickFreq(rd,['GND'],{rwy:p.dep.rwy,prefer:/OUTBOUND/i,not:/INBOUND/i}),
     twr:pickFreq(rd,['TWR','TOWER'],{rwy:p.dep.rwy}),
-    dep:pickFreq(rd,['DEP','A/D','APP/DEP','APP','TCA','RDR'],{rwy:p.dep.rwy,prefer:/DEP|A\/D/}),
+    dep:pickProc(rd,'DP',p.sid,p.dep.rwy,outB)||pickFreq(rd,['DEP','A/D','APP/DEP','APP','TCA','RDR'],{rwy:p.dep.rwy,prefer:/DEP|A\/D/,brg:outB,alt:'low'}),
     ctr1:pickFreq(rd,['CNTR','ACC']),
     ctr2:pickFreq(ra,['CNTR','ACC']),
-    app:pickFreq(ra,['APP','A/D','APP/DEP','ARR','DIR','TCA','RDR'],{rwy:p.arr.rwy}),
+    app:pickProc(ra,'STAR',p.star,p.arr.rwy,inB)||pickFreq(ra,['APP','A/D','APP/DEP','ARR','DIR','TCA','RDR'],{rwy:p.arr.rwy,brg:inB,alt:'high',prefer:/\bIC\b/}),
     atwr:pickFreq(ra,['TWR','TOWER'],{rwy:p.arr.rwy}),
-    agnd:pickFreq(ra,['GND'],{rwy:p.arr.rwy}),
+    agnd:pickFreq(ra,['GND'],{rwy:p.arr.rwy,prefer:/INBOUND/i,not:/OUTBOUND/i}),
     datis:pickFreq(rd,['ATIS','D-ATIS'],{prefer:/DEP/i,not:/ARR/i})||pickFreq(rd,['AWOS','ASOS']),
     aatis:pickFreq(ra,['ATIS','D-ATIS'],{prefer:/ARR/i,not:/DEP/i})||pickFreq(ra,['AWOS','ASOS'])
   };
@@ -777,6 +822,12 @@ async function buildFacilities(p){
     datis:mk('datis',dn+(E.datis&&/AWOS|ASOS/.test(E.datis[0])?' '+E.datis[0]:' ATIS'),dr,9,E.datis,126.0,135.0),
     aatis:mk('aatis',an+(E.aatis&&/AWOS|ASOS/.test(E.aatis[0])?' '+E.aatis[0]:' ATIS'),ar,9,E.aatis,126.0,135.0)
   };
+  // US airports: use the FAA radio calls (Lindbergh Tower, SoCal Departure, O'Hare Ground)
+  const md=rd&&rd.meta,ma=ra&&ra.meta;
+  if(md&&fd){const t=niceCall(md.t);if(t){F.clr.name=t+' Clearance';F.gnd.name=t+' Ground';F.twr.name=t+' Tower';}
+    if(md.d&&E.dep)F.dep.name=niceCall(md.d)+' Departure';}
+  if(ma&&fa){const t=niceCall(ma.t);if(t){F.atwr.name=t+' Tower';F.agnd.name=t+' Ground';}
+    if(ma.a&&E.app)F.app.name=niceCall(ma.a)+' Approach';}
   // Small airports: no clearance delivery frequency means Ground gives the clearance.
   F.clr.noCD=!E.clr&&!!rd;
   if(F.clr.noCD){F.clr.name=F.gnd.name;F.clr.freq=F.gnd.freq;F.clr.est=F.gnd.est;F.clr.src=F.gnd.src;}
@@ -822,7 +873,7 @@ const KK_LIB='https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/+esm';
 const KK_MODEL='onnx-community/Kokoro-82M-v1.0-ONNX';
 const KOKORO={tts:null,loading:null,ready:false,broken:false,mode:''};
 // Best-rated voices first (see the Kokoro model card grades)
-const KK_US=['am_michael','af_heart','am_fenrir','af_bella','am_puck','af_nicole','am_echo','af_sarah'];
+const KK_US=['am_michael','af_heart','am_fenrir','af_bella','am_puck','am_echo','af_sarah'];
 const KK_UK=['bm_george','bf_emma','bm_fable','bf_isabella','bm_lewis','bm_daniel'];
 function kokoroVoiceFor(region,idx){
   const l=langsFor(region)[0]||'en-US';
@@ -873,7 +924,15 @@ async function azSynth(text,voice){
 }
 // Plays generated audio through the radio filter. Pitch differs a little per controller.
 let RADIO_CURVE=null;
-function radioCurve(){if(RADIO_CURVE)return RADIO_CURVE;const n=1024,c=new Float32Array(n);for(let i=0;i<n;i++){const x=i*2/n-1;c[i]=Math.tanh(2.2*x)/Math.tanh(2.2);}return RADIO_CURVE=c;}
+// Radio sound presets. 'real' is the default: narrow, driven hard, a little crackle.
+const BUZZ={
+  light:{hp:350,lp:2900,pk:4,pkf:1700,k:2.2,asym:0,drive:1,hiss:0.018,crackle:0,out:1.6},
+  real:{hp:480,lp:2500,pk:7,pkf:1500,k:4.5,asym:0.18,drive:1.8,hiss:0.03,crackle:0.22,out:1.35},
+  rough:{hp:600,lp:2200,pk:9,pkf:1400,k:7,asym:0.3,drive:2.6,hiss:0.05,crackle:0.4,out:1.2}
+};
+// Clipping curve. The small offset (asym) adds even harmonics, which is the buzz you hear on airband audio.
+function radioCurve(k,asym){const key=k+'/'+asym;RADIO_CURVE=RADIO_CURVE||{};if(RADIO_CURVE[key])return RADIO_CURVE[key];
+  const n=2048,c=new Float32Array(n),off=Math.tanh(k*asym);for(let i=0;i<n;i++){const x=i*2/n-1;c[i]=(Math.tanh(k*(x+asym))-off)/Math.tanh(k);}return RADIO_CURVE[key]=c;}
 async function playAudio(blob,f,fixedRate){
   unlockAudio();if(!actx)throw new Error('no audio');
   const buf=await actx.decodeAudioData(await blob.arrayBuffer());
@@ -883,16 +942,33 @@ async function playAudio(blob,f,fixedRate){
     src.playbackRate.value=(fixedRate?1+((f.pitch||1)-1)*0.5:(f.pitch||1)*SET.rate);
     let out=src,hiss=null;
     if(SET.radio){
-      // VHF airband sound: narrow band, a little drive, heavy compression, faint carrier hiss
-      const hp=actx.createBiquadFilter();hp.type='highpass';hp.frequency.value=350;
-      const lp=actx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2900;
-      const pk=actx.createBiquadFilter();pk.type='peaking';pk.frequency.value=1700;pk.Q.value=0.9;pk.gain.value=4;
-      const ws=actx.createWaveShaper();ws.curve=radioCurve();
-      const cp=actx.createDynamicsCompressor();cp.threshold.value=-26;cp.ratio.value=8;cp.attack.value=0.003;cp.release.value=0.12;
-      const g=actx.createGain();g.gain.value=1.6;
-      src.connect(hp);hp.connect(lp);lp.connect(pk);pk.connect(ws);ws.connect(cp);cp.connect(g);out=g;
-      const nb=actx.createBuffer(1,actx.sampleRate*2,actx.sampleRate);const d=nb.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
-      hiss=actx.createBufferSource();hiss.buffer=nb;hiss.loop=true;const hb=actx.createBiquadFilter();hb.type='bandpass';hb.frequency.value=2200;hb.Q.value=0.6;const hg=actx.createGain();hg.gain.value=0.018;
+      // VHF airband sound: narrow band, driven into clipping, compressed, with carrier hiss and crackle
+      const P=BUZZ[SET.buzz]||BUZZ.real;
+      const bq=(type,f,q,gain)=>{const x=actx.createBiquadFilter();x.type=type;x.frequency.value=f;if(q!=null)x.Q.value=q;if(gain!=null)x.gain.value=gain;return x;};
+      // two filters on each side make the cutoff steep, like a cheap radio speaker
+      const hp1=bq('highpass',P.hp,0.7),hp2=bq('highpass',P.hp,0.7);
+      const lp1=bq('lowpass',P.lp,0.7),lp2=bq('lowpass',P.lp,0.7);
+      const pk=bq('peaking',P.pkf,1.1,P.pk);
+      const pre=actx.createGain();pre.gain.value=P.drive;
+      const ws=actx.createWaveShaper();ws.curve=radioCurve(P.k,P.asym);ws.oversample='2x';
+      // clipping makes new high harmonics, so band-limit again after it
+      const lp3=bq('lowpass',P.lp+300,0.7),hp3=bq('highpass',P.hp-100,0.7);
+      const cp=actx.createDynamicsCompressor();cp.threshold.value=-28;cp.knee.value=6;cp.ratio.value=10;cp.attack.value=0.002;cp.release.value=0.1;
+      const g=actx.createGain();g.gain.value=P.out;
+      src.connect(hp1);hp1.connect(hp2);hp2.connect(lp1);lp1.connect(lp2);lp2.connect(pk);pk.connect(pre);pre.connect(ws);ws.connect(lp3);lp3.connect(hp3);hp3.connect(cp);out=cp;
+      // crackle: the voice level flutters a little, like a signal that isn't perfectly steady
+      if(P.crackle){
+        const flut=actx.createGain();flut.gain.value=1;
+        const lb=actx.createBuffer(1,actx.sampleRate*3,actx.sampleRate);const ld=lb.getChannelData(0);
+        let v=0;for(let i=0;i<ld.length;i++){v+=(Math.random()*2-1)*0.02;v*=0.995;ld[i]=v;if(Math.random()<0.00004)ld[i]-=0.6;}
+        const lfo=actx.createBufferSource();lfo.buffer=lb;lfo.loop=true;const lg=actx.createGain();lg.gain.value=P.crackle;
+        lfo.connect(lg);lg.connect(flut.gain);cp.connect(flut);out=flut;lfo.start();
+        src.addEventListener('ended',()=>{try{lfo.stop();}catch(e){}});
+      }
+      out.connect(g);out=g;
+      const nb=actx.createBuffer(1,actx.sampleRate*2,actx.sampleRate);const d=nb.getChannelData(0);
+      for(let i=0;i<d.length;i++){d[i]=Math.random()*2-1;if(P.crackle&&Math.random()<0.0006)d[i]*=6;}
+      hiss=actx.createBufferSource();hiss.buffer=nb;hiss.loop=true;const hb=bq('bandpass',2000,0.5);const hg=actx.createGain();hg.gain.value=P.hiss;
       hiss.connect(hb);hb.connect(hg);hg.connect(actx.destination);hiss.start();
     }
     out.connect(actx.destination);TX.src=src;src.onended=()=>{if(hiss){try{hiss.stop();}catch(e){}}if(TX.src===src)TX.src=null;res();};radioClick();src.start();
@@ -2104,11 +2180,12 @@ function init(){
   $('s_vatsim').checked=SET.vatsim;$('s_vatsim').onchange=e=>{SET.vatsim=e.target.checked;saveSet();};
   $('s_showtraffic').checked=SET.showTraffic;$('s_showtraffic').onchange=e=>{SET.showTraffic=e.target.checked;saveSet();};
   $('s_engine').value=SET.engine;$('s_engine').onchange=e=>{SET.engine=e.target.value;saveSet();voicesNote();};
-  $('s_accent').value=SET.accent;$('s_strict').value=SET.strict;$('s_rate').value=SET.rate;$('s_radio').checked=SET.radio;$('s_ai').checked=SET.ai;$('sbUser').value=SET.sbUser||'';
+  $('s_accent').value=SET.accent;$('s_strict').value=SET.strict;$('s_rate').value=SET.rate;$('s_radio').checked=SET.radio;$('s_buzz').value=SET.buzz||'real';$('s_ai').checked=SET.ai;$('sbUser').value=SET.sbUser||'';
   $('s_accent').onchange=e=>{SET.accent=e.target.value;saveSet();assignVoices();voicesNote();};
   $('s_strict').onchange=e=>{SET.strict=e.target.value;saveSet();};
   $('s_rate').oninput=e=>{SET.rate=+e.target.value;saveSet();};
   $('s_radio').onchange=e=>{SET.radio=e.target.checked;saveSet();};
+  $('s_buzz').onchange=e=>{SET.buzz=e.target.value;saveSet();};
   $('s_ai').onchange=e=>{SET.ai=e.target.checked;saveSet();};
   // voices
   if(typeof speechSynthesis!=='undefined'){loadVoices();speechSynthesis.onvoiceschanged=()=>{loadVoices();assignVoices();voicesNote();};}
