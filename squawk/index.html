@@ -105,6 +105,7 @@ a{color:var(--blue)}
 .wantrow .xauto,.copi .xauto{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--mute);margin-top:6px}.xauto input{width:auto;margin:0}
 .copi{display:flex;gap:14px;flex-wrap:wrap;margin-top:6px}
 .msg.dev{border-left:3px solid #ff6b6b}
+.maptip{background:#111a;color:#cfe;border:0;box-shadow:none;font-size:11px;padding:0 3px}
 .want.ok{color:var(--green)}
 #fchart td{cursor:pointer}
 .com{display:flex;align-items:center;gap:12px;background:#05090c;border:1px solid var(--line);border-radius:14px;padding:10px 14px}
@@ -351,6 +352,7 @@ td input{padding:6px 8px}
     <div class="copi"><label class="xauto"><input type="checkbox" id="copVoice"> Copilot says my calls</label><label class="xauto"><input type="checkbox" id="copAuto"> Copilot does readbacks</label></div>
   </div>
   <div class="events" id="events"></div>
+  <details class="card" id="mapBox" style="padding:10px 14px"><summary>Flight map</summary><div id="fmap" style="height:280px;border-radius:8px;margin-top:8px;background:#0b1117"></div><p class="muted" id="mapNote" style="margin:6px 0 0">Connect SIM DATA to see where you are and which center you're in.</p></details>
   <details class="card" style="padding:10px 14px"><summary>Frequency chart</summary><table id="fchart"></table><p class="muted">Tap a frequency to load it into standby.</p></details>
   <div class="ctrl">
     <button id="ptt">HOLD<br>TO TALK</button>
@@ -2011,7 +2013,7 @@ const EVENTS={
   leaveDep:{label:'Leaving departure airspace',when:()=>S.phase==='dep'&&S.f.depIn&&!S.pending,fn:()=>handoff('dep','ctr1','ctr')},
   nextSector:{label:'Next sector',when:()=>S.phase==='ctr'&&S.cur==='ctr1'&&S.f.in_ctr1&&!S.pending,fn:()=>handoff('ctr1','ctr2','ctr')},
   tod:{label:'Top of descent',when:()=>S.phase==='ctr'&&!S.f.desc&&S.f['in_'+S.cur]&&!S.pending,fn:()=>{
-    refreshWx('arr',true).catch(()=>{});
+    refreshWx('arr',true).catch(()=>{}).then(arrRunwayCheck);
     const key=S.cur,st=facOf(key).style,al=P_altim(metar('arr'),st);S.f.desc=true;
     if(S.plan.star&&st==='faa'){issue(key,M(P_cs(),', descend via the ',{t:S.plan.star,s:procSpoken(S.plan.star)},' arrival. ',S.plan.arr.call,' ',al,'.'),
       [R_re(/descend via/,'descend via the '+S.plan.star),R_num(al.v,al.t,al.s)],()=>sys('Start down. Tap "Near the arrival airport" around 15,000 ft.'),`Descend via the ${S.plan.star} arrival, ${al.t}, ${S.csInfo.t}.`);return;}
@@ -2037,7 +2039,7 @@ const EVENTS={
   est:{label:'Established on final',when:()=>S.phase==='app'&&S.f.appClr&&!S.pending,fn:()=>handoff('app','atwr','twr_in')},
   ga:{label:'Go around',when:()=>S.phase==='twr_in'&&!S.pending,fn:()=>{
     const st=facOf('atwr').style,a=P_alt(Math.max(3000,finalAlt()+1000),TA('arr')),fq=P_freq(facOf('app').freq,st),rh=P_hdg(rwyHdg(S.plan.arr.rwy));
-    clearTimers();S.f.landClr=false;S.f.cont=false;
+    clearTimers();S.f.landClr=false;S.f.cont=false;S.f.goAround=true;S.f.gaStage='';
     issue('atwr',M(P_cs(),', roger, fly runway heading, ',st==='faa'?'climb and maintain ':'climb altitude ',a,'. Contact Approach ',fq,'.'),[R_num(a.v,a.t,a.s),R_num(fq.v,fq.t,fq.s)],
       ()=>{S.phase='app';S.cur='app';S.f.appIn=false;S.f.appClr=false;sys('Tune Approach and check in again.');},`Runway heading, ${a.t}, ${fq.t}, ${S.csInfo.t}.`);
   }},
@@ -2119,6 +2121,81 @@ function hint(){
 }
 function hintIsCall(){const h=hint();return S.pending||(/,/.test(h)&&!/^(Taxi|Take|Climb|Descend|Land|Waiting|Line|Continue|Flight)/.test(h));}
 
+/* ---------- Live runways ----------
+   US airports: read the runways in use from the live D-ATIS (datis.clowd.io).
+   Everywhere else: pick the runway with the best headwind from the live METAR.
+   If the filed runway is one of the runways in use, keep it; otherwise switch. */
+function rwyNorm(r){const m=String(r||'').toUpperCase().match(/(\d{1,2})([LRC]?)/);return m?String(+m[1]).padStart(2,'0')+m[2]:'';}
+function rwyRecip(r){const m=rwyNorm(r).match(/^(\d{2})([LRC]?)$/);if(!m)return '';const n=(+m[1]+17)%36+1;return String(n).padStart(2,'0')+({L:'R',R:'L',C:'C','':''})[m[2]];}
+function rwyEnds(side){
+  const G=TAXI[side],out=[];
+  if(G&&G.runways)for(const R of G.runways){if(!R.ends||R.ends.length<2)continue;R.ends.forEach((e,i)=>{const o=R.ends[1-i];if(e&&o&&e.lat!=null&&o.lat!=null&&rwyNorm(e.id))out.push({id:rwyNorm(e.id),hdg:brg(e,o)});});}
+  if(!out.length){const f=rwyNorm(S.plan[side].rwy);if(f){out.push({id:f,hdg:rwyHdg(f)});const r=rwyRecip(f);if(r)out.push({id:r,hdg:rwyHdg(r)});}}
+  return out;
+}
+function parseDatis(txt){
+  const T=' '+String(txt).toUpperCase().replace(/\s+/g,' ')+' ',out={arr:[],dep:[],app:{}};
+  const list=s=>[...new Set((s.match(/\b\d{1,2}[LRC]?\b/g)||[]).map(rwyNorm).filter(r=>+r.slice(0,2)>=1&&+r.slice(0,2)<=36))];
+  for(const sent of T.split(/[.;]/)){
+    const m=sent.match(/\b(RWYS?|RUNWAYS?)\b(.*)$/);if(!m)continue;
+    const rw=list(m[2].replace(/\b(AND|&)\b/g,' '));if(!rw.length)continue;
+    if(/\b(LNDG|LDG|LANDING|LAND|ARRIVALS?|ARRIVING|ARR|APCHS?|APPROACH(ES)?|EXPECT)\b/.test(sent))out.arr.push(...rw);
+    if(/\b(DEPG|DEPARTING|DEPARTURES?|DEPS?|DEP|TKOF|TAKEOFF)\b/.test(sent))out.dep.push(...rw);
+  }
+  for(const m of T.matchAll(/\b(ILS|LOC|RNAV|RNP|GPS|VISUAL|VOR)\b(?: [YZ])?(?: APCHS?| APPROACH(?:ES)?)?(?: TO)? (?:RWY|RUNWAY) (\d{1,2}[LRC]?)/g))out.app[rwyNorm(m[2])]=m[1];
+  out.arr=[...new Set(out.arr)];out.dep=[...new Set(out.dep)];return out;
+}
+async function datisRunways(icao){
+  if(!/^[KP][A-Z0-9]{3}$/.test(icao)||HEADLESS)return null;
+  try{const ctl=new AbortController();const tm=setTimeout(()=>ctl.abort(),6000);
+    const r=await fetch('https://datis.clowd.io/api/'+icao,{signal:ctl.signal});clearTimeout(tm);if(!r.ok)return null;
+    const j=await r.json();const arr=Array.isArray(j)?j:[j];const txt=arr.map(x=>x&&x.datis||'').join(' . ');
+    if(!txt.trim())return null;const d=parseDatis(txt);return d.arr.length||d.dep.length?d:null;
+  }catch(e){return null;}
+}
+async function liveRunway(side){
+  const ap=S.plan[side],filed=rwyNorm(ap.rwy);if(!filed)return null;
+  let inUse=null,src='',types={};
+  const d=await datisRunways(ap.icao);
+  if(d){inUse=side==='dep'?(d.dep.length?d.dep:d.arr):(d.arr.length?d.arr:d.dep);types=d.app;src=`${ap.icao}'s live ATIS`;}
+  if(!inUse||!inUse.length){
+    const w=metar(side).wind;
+    if(w&&w.dir!=null&&w.spd>=6){
+      const ends=rwyEnds(side);const hw=e=>w.spd*Math.cos((w.dir-e.hdg)*Math.PI/180);
+      if(ends.length){const best=ends.reduce((a,b)=>hw(b)>hw(a)?b:a);
+        if(hw(best)>0){inUse=ends.filter(e=>angDiff(e.hdg,best.hdg)<=25).map(e=>e.id);src=`the wind at ${ap.icao} (${String(w.dir).padStart(3,'0')} at ${w.spd} kt)`;}}
+    }
+  }
+  if(!inUse||!inUse.length)return null;
+  if(inUse.includes(filed))return {keep:true,rwy:filed,src,type:types[filed]};
+  const rec=rwyRecip(filed),pick=inUse.includes(rec)?rec:inUse[0];
+  return {keep:false,rwy:pick,from:filed,src,type:types[pick],all:inUse};
+}
+function appTypeFrom(t,cur){if(!t)return cur;return /ILS|LOC/.test(t)?'ils':/RNAV|RNP|GPS/.test(t)?'rnav':/VISUAL/.test(t)?'visual':cur;}
+async function applyLiveRunway(side){
+  let r=null;try{r=await liveRunway(side);}catch(e){}
+  if(!r||r.keep)return r;
+  if(!/^0/.test(String(S.plan[side].rwy)))r.rwy=r.rwy.replace(/^0/,'');   // keep the airport's style (4L, not 04L)
+  S.plan[side].rwy=r.rwy;
+  if(side==='arr')S.f.appType=appTypeFrom(r.type,S.f.appType||'ils');
+  return r;
+}
+// At top of descent: if the arrival runway changed, the controller tells you which approach to expect.
+function arrRunwayCheck(){
+  applyLiveRunway('arr').then(r=>{
+    if(!r||r.keep)return;
+    const say=()=>{
+      if(!['ctr','app'].includes(S.phase)){return;}
+      if(S.pending||TX.n>0){later(1500,say);return;}
+      const rw=P_rwy(r.rwy),t=S.f.appType;
+      const exp=r.type?M('Expect the ',{t:({ils:'ILS',rnav:'RNAV',visual:'visual'})[t]||r.type,s:({ils:'I L S',rnav:'R NAV',visual:'visual'})[t]||r.type},' runway ',rw,' approach.')
+        :M('Expect radar vectors for runway ',rw,'.');
+      atc(S.cur,M(P_cs(),', runway change, ',S.plan.arr.call,' is now landing runway ',rw,'. ',exp));
+      sys(`Arrival runway changed from ${r.from} to ${r.rwy} (from ${r.src}). Set up your FMS and charts for runway ${r.rwy}.`);
+    };
+    later(800,say);
+  });
+}
 // Quick starts: skip to the runway (already cleared IFR, tower gives the takeoff clearance)
 // or to final approach (tower gives the landing clearance). Radios are tuned for you.
 function quickStart(where){
@@ -2140,7 +2217,7 @@ function quickStart(where){
 }
 function startFlight(){
   clearTimers();
-  S.phase='clr';S.cur='clr';S.f={};S.assigned=null;SIM.dh={};S.taxiQ=null;S.arrTaxi=null;S.taxiTo='';S.pending=null;S.last=null;S.score={ok:0,miss:0,misses:[]};S.tips=new Set();
+  S.phase='clr';S.cur='clr';S.f={};S.assigned=null;SIM.dh={};F_ORIG=null;SIM.firHold=0;S.taxiQ=null;S.arrTaxi=null;S.taxiTo='';S.pending=null;S.last=null;S.score={ok:0,miss:0,misses:[]};S.tips=new Set();
   let sq;do{sq=String(1+Math.floor(Math.random()*6))+[0,0,0].map(()=>Math.floor(Math.random()*8)).join('');}while(/00$/.test(sq)||/^7[567]/.test(sq));
   S.squawk=sq;XP.warned={};xpSendAssigned();renderXpdr();
   const L='ABCDEFGHIJKLMNOPQRSTUVWXYZ';S.atis={dep:pick(L.split('')),arr:pick(L.split(''))};
@@ -2377,15 +2454,23 @@ const SIM={on:false,ok:false,d:null,timer:null,fails:0,hold:{},depGround:null};
 // altitude seen while taxiing; for arrival with no elevation we return null and the rules skip it.
 function simAgl(side){const a=S.plan&&S.plan[side],d=SIM.d;if(!d||d.alt==null)return null;
   if(side==='dep'&&SIM.depGround!=null)return d.alt-SIM.depGround;return a&&a.elev?d.alt-a.elev:(side==='dep'?d.alt:null);}
-function simDist(side){const a=S.plan&&S.plan[side],d=SIM.d;if(!a||!d||d.lat==null||a.lat==null||isNaN(a.lat))return null;return hav({lat:d.lat,lon:d.lon},a)/1852;}
+// Airport position. Some airports have no coordinates in the plan, so use the middle of their runways (taxi data).
+function apPos(side){
+  const a=S.plan&&S.plan[side];if(!a)return null;
+  if(a.lat!=null&&!isNaN(a.lat)&&a.lon!=null&&!isNaN(a.lon))return a;
+  const G=TAXI[side];if(!G||!G.runways)return null;const pts=[];
+  for(const R of G.runways)for(const e of (R.ends||[]))if(e&&e.lat!=null)pts.push(e);
+  if(!pts.length)return null;a.lat=pts.reduce((s,p)=>s+p.lat,0)/pts.length;a.lon=pts.reduce((s,p)=>s+p.lon,0)/pts.length;return a;
+}
+function simDist(side){const a=apPos(side),d=SIM.d;if(!a||!d||d.lat==null)return null;return hav({lat:d.lat,lon:d.lon},a)/1852;}
 // When each event should fire, from the live numbers. Each must stay true for a few seconds.
 const SIM_RULES={
   airborne:{n:3,ok:d=>d.gs>60&&simAgl('dep')>400},
   leaveDep:{n:3,ok:d=>{const x=simDist('dep');return d.alt>=Math.min(10000,S.plan.cruise-2000)||(x!=null&&x>35);}},
-  nextSector:{n:3,ok:()=>{const a=simDist('dep'),b=simDist('arr');return a!=null&&b!=null&&a/(a+b)>0.45;}},
+  nextSector:{n:3,ok:()=>{if(FIRS.d&&curFir())return false;const a=simDist('dep'),b=simDist('arr');return a!=null&&b!=null&&a/(a+b)>0.45;}},
   tod:{n:3,ok:d=>{const b=simDist('arr');return b!=null&&b<(d.alt-((S.plan.arr.elev)||0))/1000*3+15;}},
   nearArr:{n:3,ok:()=>{const b=simDist('arr');return b!=null&&b<45;}},
-  vectors:{n:3,ok:()=>{const b=simDist('arr');return b!=null&&b<25;}},
+  vectors:{n:3,ok:()=>{const b=simDist('arr');if(S.f.goAround)return S.f.gaStage==='base'&&Date.now()-(S.f.gaAt||0)>35000;return b!=null&&b<18&&(!S.assigned||S.assigned.ft<=appAlt()+500||b<12);}},
   est:{n:3,ok:()=>{const b=simDist('arr'),h=simAgl('arr');return b!=null&&b<12&&(h==null||h<4500);}},
   vacate:{n:6,ok:d=>d.gs<30&&Math.abs(d.vs||0)<200},
 };
@@ -2434,23 +2519,162 @@ function noteAssigned(t){
   const now=SIM.d&&SIM.d.alt!=null?SIM.d.alt:null;
   S.assigned={ft,dir:now==null?1:(ft>=now?1:-1),warned:false};
 }
+/* ---------- Centers by live position ----------
+   FIR / center boundaries (data/firs.json, from the VATSpy Data Project, CC BY-SA 4.0).
+   While you cruise, Squawk hands you to whichever center or oceanic area you are actually in. */
+const FIRS={d:null,loading:null};
+function firLoad(){if(FIRS.d)return Promise.resolve(FIRS.d);if(!FIRS.loading)FIRS.loading=fetch('data/firs.json').then(r=>r.json()).then(j=>FIRS.d=j.f).catch(()=>{FIRS.loading=null;return null;});return FIRS.loading;}
+function inRing(x,y,r){let c=false;for(let i=0,j=r.length-1;i<r.length;j=i++){const xi=r[i][0],yi=r[i][1],xj=r[j][0],yj=r[j][1];if(((yi>y)!==(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi)+xi))c=!c;}return c;}
+function firAt(lat,lon){
+  if(!FIRS.d||lat==null||lon==null)return null;
+  const h=FIRS.d.filter(f=>lon>=f.b[0]&&lon<=f.b[2]&&lat>=f.b[1]&&lat<=f.b[3]&&f.p.some(r=>inRing(lon,lat,r)));
+  h.sort((a,b)=>Math.hypot(a.l[0]-lon,a.l[1]-lat)-Math.hypot(b.l[0]-lon,b.l[1]-lat));return h[0]||null;
+}
+// A center facility for a FIR. Reuses the real frequency when it matches a center we already know.
+function firFac(key,fir){
+  const known=['ctr1','ctr2'].map(k=>F_ORIG&&F_ORIG[k]).find(f=>f&&f.name===fir.n);
+  const region=regionFor(fir.i.length===4?fir.i:S.plan.arr.icao);
+  const base=known||{freq:fmtFreq(fakeFreq('fir'+fir.i,fir.o?126.0:124.0,135.95)),est:true,src:''};
+  const f={key,name:fir.n,region,style:region.style,vIdx:4+(hash(fir.i)%5),freq:base.freq,est:base.est,src:base.src||'',pitch:[1,.93,1.07,.97,1.04][hash(fir.i)%5],fir:fir.i,oceanic:!!fir.o};
+  f.voice=pickVoice(langsFor(region),f.vIdx);f.piper=piperVoiceFor(region);return f;
+}
+let F_ORIG=null;
+function curFir(){const d=SIM.d;return d?firAt(d.lat,d.lon):null;}
+function firHandoff(fir){
+  const from=S.cur;
+  if(from==='ctr2'){   // move the current center into ctr1 so ctr2 can be the next one
+    S.fac.ctr1=Object.assign({},S.fac.ctr2,{key:'ctr1'});S.f.in_ctr1=S.f.in_ctr2;S.f.in_ctr2=false;S.cur='ctr1';
+  }
+  S.fac.ctr2=firFac('ctr2',fir);S.f.in_ctr2=false;
+  const fromF=facOf('ctr1'),st=fromF.style,to=facOf('ctr2'),fq=P_freq(to.freq,st);
+  const lead=to.oceanic&&!fromF.oceanic?'radar service terminated, ':(!to.oceanic&&fromF.oceanic?'':'');
+  issue('ctr1',M(P_cs(),', ',lead,'contact ',to.name,' ',fq,'.'),[R_num(fq.v,fq.t,fq.s)],
+    ()=>{S.phase='ctr';S.cur='ctr2';sys(`Tune ${fq.t} and check in with ${to.name}.`+(to.oceanic?' Over the ocean there is no radar, so this controller mostly listens for your position reports.':''));renderChart();},
+    `${to.name} ${fq.t}, ${S.csInfo.t}.`);
+}
+function simCenters(){
+  if(!FIRS.d||S.pending||S.phase!=='ctr'||!S.f['in_'+S.cur])return false;
+  const fir=curFir();if(!fir)return false;
+  const cur=facOf(S.cur);
+  if(!cur.fir){cur.fir=fir.i;if(cur.name!==fir.n){cur.firName=fir.n;}return false;}   // the first center: just remember where we are
+  const same=fir.i===cur.fir||fir.n===cur.name;
+  SIM.firHold=same?0:(SIM.firHold||0)+1;
+  if(SIM.firHold>=4){SIM.firHold=0;firHandoff(fir);return true;}
+  return false;
+}
+// Before the departure controller hands you off, make the first center the one you are actually in.
+function firFirstCenter(){
+  const fir=curFir();if(!fir)return;
+  if(!F_ORIG)F_ORIG={ctr1:Object.assign({},S.fac.ctr1),ctr2:Object.assign({},S.fac.ctr2)};
+  if(fir.n!==S.fac.ctr1.name)S.fac.ctr1=firFac('ctr1',fir);else S.fac.ctr1.fir=fir.i;
+  renderChart();
+}
+
+/* ---------- Flight map (Leaflet + CARTO/OpenStreetMap tiles, loaded only when you open it) ---------- */
+const MAP={L:null,map:null,me:null,trail:null,route:null,fir:null,firId:'',loading:null};
+function mapLoad(){
+  if(MAP.L)return Promise.resolve(MAP.L);if(MAP.loading)return MAP.loading;
+  MAP.loading=new Promise((res,rej)=>{
+    const css=document.createElement('link');css.rel='stylesheet';css.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';document.head.appendChild(css);
+    const js=document.createElement('script');js.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';js.onload=()=>{MAP.L=window.L;res(MAP.L);};js.onerror=()=>{MAP.loading=null;rej();};document.head.appendChild(js);
+  });return MAP.loading;
+}
+async function mapInit(){
+  if(MAP.map||HEADLESS)return;let L;try{L=await mapLoad();}catch(e){$('mapNote').textContent='Couldn\'t load the map. Check your internet connection.';return;}
+  MAP.map=L.map('fmap',{zoomControl:true,attributionControl:true,worldCopyJump:true}).setView([40,-40],3);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:12,attribution:'&copy; OpenStreetMap contributors &copy; CARTO'}).addTo(MAP.map);
+  MAP.trail=L.polyline([],{color:'#ffb547',weight:2}).addTo(MAP.map);
+  mapRoute();mapUpdate();setTimeout(()=>MAP.map.invalidateSize(),50);
+}
+function mapRoute(){
+  if(!MAP.map||!S.plan)return;const L=MAP.L,a=apPos('dep')||S.plan.dep,b=apPos('arr')||S.plan.arr;
+  if(MAP.route)MAP.route.remove();
+  if(a.lat==null||b.lat==null||isNaN(a.lat)||isNaN(b.lat))return;
+  const pts=[];for(let i=0;i<=40;i++){const t=i/40;pts.push(gcPoint(a,b,t));}
+  MAP.route=L.layerGroup([L.polyline(pts,{color:'#4aa3ff',weight:2,dashArray:'6 6'}),
+    L.circleMarker([a.lat,a.lon],{radius:4,color:'#4aa3ff'}).bindTooltip(a.icao,{permanent:true,direction:'top',className:'maptip'}),
+    L.circleMarker([b.lat,b.lon],{radius:4,color:'#4aa3ff'}).bindTooltip(b.icao,{permanent:true,direction:'top',className:'maptip'})]).addTo(MAP.map);
+  if(!SIM.ok)MAP.map.fitBounds(L.latLngBounds(pts).pad(0.2));
+}
+function gcPoint(a,b,t){const r=Math.PI/180,la1=a.lat*r,lo1=a.lon*r,la2=b.lat*r,lo2=b.lon*r;
+  const d=2*Math.asin(Math.sqrt(Math.sin((la2-la1)/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin((lo2-lo1)/2)**2));if(d<1e-9)return[a.lat,a.lon];
+  const A=Math.sin((1-t)*d)/Math.sin(d),B=Math.sin(t*d)/Math.sin(d);const x=A*Math.cos(la1)*Math.cos(lo1)+B*Math.cos(la2)*Math.cos(lo2),y=A*Math.cos(la1)*Math.sin(lo1)+B*Math.cos(la2)*Math.sin(lo2),z=A*Math.sin(la1)+B*Math.sin(la2);
+  return[Math.atan2(z,Math.sqrt(x*x+y*y))/r,Math.atan2(y,x)/r];}
+function mapUpdate(){
+  if(!MAP.map)return;const L=MAP.L,d=SIM.d;
+  if(!(SIM.ok&&d&&d.lat!=null)){$('mapNote').textContent='Connect SIM DATA to see where you are and which center you\'re in.';return;}
+  const ll=[d.lat,d.lon];
+  if(!MAP.me){MAP.me=L.circleMarker(ll,{radius:6,color:'#fff',fillColor:'#ffb547',fillOpacity:1,weight:2}).addTo(MAP.map);MAP.map.setView(ll,6);}
+  else MAP.me.setLatLng(ll);
+  const tr=MAP.trail.getLatLngs();const last=tr[tr.length-1];if(!last||Math.abs(last.lat-d.lat)+Math.abs(last.lng-d.lon)>0.02){MAP.trail.addLatLng(ll);if(tr.length>4000)MAP.trail.setLatLngs(tr.slice(-3000));}
+  if(!MAP.map.getBounds().pad(-0.15).contains(ll))MAP.map.panTo(ll);
+  const fir=curFir();
+  if(fir&&fir.i+fir.n!==MAP.firId){MAP.firId=fir.i+fir.n;if(MAP.fir)MAP.fir.remove();
+    MAP.fir=L.polygon(fir.p.map(r=>r.map(p=>[p[1],p[0]])),{color:fir.o?'#7ad7ff':'#8bd17c',weight:1.5,fillOpacity:0.06}).addTo(MAP.map);}
+  const talk=S.fac&&['ctr','dep','app'].includes(S.phase)?facOf(S.cur).name:'';
+  $('mapNote').textContent=(fir?`You're in ${fir.n} airspace${fir.o?' (oceanic, no radar)':''}.`:'Outside the center boundaries Squawk knows.')+(talk?` Talking to ${talk}.`:'')+` ${Math.round(d.alt||0).toLocaleString()} ft, ${Math.round(d.gs||0)} kt.`;
+}
+/* ---------- Step-down descents and go-arounds (need live sim data) ---------- */
+function descendTo(key,ft){
+  const st=facOf(key).style,ta=TA('arr'),a=P_alt(ft,ta);S.f.alt=a.ft;
+  const verb=st==='faa'?'descend and maintain ':(a.ft>=ta?'descend ':'descend altitude ');
+  issue(key,M(P_cs(),', ',verb,a,'.'),[R_num(a.v,a.t,a.s)],()=>{},`${verb}${a.t}, ${S.csInfo.t}.`);
+}
+function simDescents(){
+  const d=SIM.d,A=S.assigned,b=simDist('arr');
+  if(!d||b==null||S.pending||!A)return false;
+  const near=Math.abs(d.alt-A.ft)<1500;
+  if(S.phase==='app'&&S.f.appIn&&!S.f.appClr&&!S.f.goAround&&near){
+    const mid=Math.min(A.ft-1000,Math.ceil((appAlt()+2000)/1000)*1000);
+    if(b<38&&A.ft>appAlt()+2500&&mid>appAlt()){descendTo('app',mid);return true;}
+    if(b<26&&A.ft>appAlt()){descendTo('app',appAlt());return true;}
+  }
+  return false;
+}
+function gaVectors(){
+  const d=SIM.d,b=simDist('arr');if(!d||b==null||S.pending)return false;
+  if(S.phase!=='app'||!S.f.goAround||!S.f.appIn||S.f.appClr)return false;
+  const st=facOf('app').style,rh=rwyHdg(S.plan.arr.rwy),ta=TA('arr');
+  if(!S.f.gaStage){S.f.gaStage='down';const h=P_hdg((rh+180)%360),a=P_alt(appAlt(),ta);S.f.alt=a.ft;
+    issue('app',M(P_cs(),', turn left ',h,', ',st==='faa'?'maintain ':'altitude ',a,', vectors for the ',{t:(S.f.appType||'ils').toUpperCase(),s:({ils:'I L S',rnav:'R NAV',visual:'visual'})[S.f.appType||'ils']},' runway ',P_rwy(S.plan.arr.rwy),'.'),
+      [R_num(h.v,h.t,h.s),R_num(a.v,a.t,a.s)],()=>{S.f.gaAt=Date.now();},`Left ${h.t}, ${a.t}, ${S.csInfo.t}.`);return true;}
+  if(S.f.gaStage==='down'&&b>=9&&Date.now()-(S.f.gaAt||0)>30000){S.f.gaStage='base';const h=P_hdg((rh+270)%360),a=P_alt(finalAlt(),ta);S.f.alt=a.ft;
+    issue('app',M(P_cs(),', turn left ',h,', descend and maintain ',a,'.'),[R_num(h.v,h.t,h.s),R_num(a.v,a.t,a.s)],()=>{S.f.gaAt=Date.now();},`Left ${h.t}, down to ${a.t}, ${S.csInfo.t}.`);return true;}
+  return false;
+}
+// Very rarely, tower sends you around on short final (about 1 landing in 40).
+function simGoAround(){
+  const d=SIM.d,b=simDist('arr');if(!d||b==null)return false;
+  if(S.phase!=='twr_in'||!S.f.landClr||S.pending||S.f.gaDone)return false;
+  if(S.f.gaPlan==null)S.f.gaPlan=Math.random()<0.025;
+  if(!S.f.gaPlan||b>2.5||d.gs<60)return false;
+  S.f.gaDone=true;S.f.goAround=true;S.f.gaStage='';
+  const st=facOf('atwr').style,a=P_alt(appAlt(),TA('arr')),fq=P_freq(facOf('app').freq,st);
+  const why=pick(['traffic still on the runway','aircraft has not vacated the runway','spacing on the runway']);
+  clearTimers();S.f.landClr=false;S.f.cont=false;
+  issue('atwr',M(P_cs(),', go around, ',why,'. Fly runway heading, ',st==='faa'?'climb and maintain ':'climb altitude ',a,'. Contact Approach ',fq,'.'),[R_re(/go(ing)? around/,'going around'),R_num(a.v,a.t,a.s),R_num(fq.v,fq.t,fq.s)],
+    ()=>{S.phase='app';S.cur='app';S.f.appIn=false;S.f.appClr=false;sys('Going around. Tune Approach and check in again.');},`Going around, runway heading, ${a.t}, ${fq.t}, ${S.csInfo.t}.`);
+  return true;
+}
 // True when live sim data will make this call on its own, so its button isn't needed.
 function simAutoHandles(k){
   if(!SIM.on||!SIM.ok||!SET.simAuto||!SIM_RULES[k]||!SIM.d)return false;
   if(['airborne','leaveDep','vacate'].includes(k))return SIM.d.alt!=null;
-  if(k==='nextSector')return simDist('dep')!=null&&simDist('arr')!=null;
+  if(k==='nextSector')return !!(FIRS.d&&curFir())||(simDist('dep')!=null&&simDist('arr')!=null);
   return simDist('arr')!=null;
 }
 function simRules(){
   if(!SIM.ok||!S.plan||['idle','done'].includes(S.phase))return;
   simDeviations();
+  if(simGoAround())return;
   if(!SET.simAuto||S.pending)return;
+  if(simCenters()||simDescents()||gaVectors())return;
   const d=SIM.d;
   for(const [k,r] of Object.entries(SIM_RULES)){
     const e=EVENTS[k];if(!e)continue;
     let ok=false;try{ok=e.when()&&r.ok(d);}catch(err){ok=false;}
     SIM.hold[k]=ok?(SIM.hold[k]||0)+1:0;
-    if(ok&&SIM.hold[k]>=r.n){SIM.hold={};event(k);return;}
+    if(ok&&SIM.hold[k]>=r.n){SIM.hold={};if(k==='leaveDep')firFirstCenter();event(k);return;}
   }
 }
 function renderSim(){
@@ -2465,13 +2689,13 @@ async function simPoll(){
   try{const r=await fetch(SIM_URL,{cache:'no-store'});const d=await r.json();SIM.fails=0;SIM.d=d;
     const was=SIM.ok;SIM.ok=!!d.ok;if(was!==SIM.ok)setTimeout(()=>ui.render(),0);
     if(SIM.ok&&d.gs!=null&&d.gs<40&&d.alt!=null&&['clr','gnd_out','twr_out'].includes(S.phase))SIM.depGround=d.alt;if(SIM.ok&&!was)sys('Live sim data connected.');if(!SIM.ok&&was)sys('Lost live sim data. Check FS2EFB and your phone.');
-    simRules();
+    simRules();mapUpdate();
   }catch(e){SIM.fails++;if(SIM.ok)sys('Lost the sim bridge.');SIM.ok=false;}
   renderSim();
 }
 function simToggle(){
   if(SIM.on){clearInterval(SIM.timer);SIM.on=false;SIM.ok=false;SIM.d=null;renderSim();ui.render();return;}
-  SIM.on=true;SIM.fails=0;SIM.hold={};simPoll();SIM.timer=setInterval(simPoll,1000);renderSim();
+  SIM.on=true;SIM.fails=0;SIM.hold={};firLoad();simPoll();SIM.timer=setInterval(simPoll,1000);renderSim();
 }
 // ATC checks: after the clearance, and when departure gets you on radar
 function xpCheck(where){
@@ -2704,15 +2928,21 @@ function init(){
   $('rvTest').onclick=()=>{unlockAudio();loadVoices();assignVoices();voicesNote();
     const a=S.fac.twr,b=S.fac.atwr;
     speakQ=speakQ.then(()=>sayAloud(a,spokenClean(a.name+', radio check, readability five.'))).then(()=>sayAloud(b,spokenClean(b.name+', how do you read?')));};
-  $('rvStart').onclick=()=>{
+  $('rvStart').onclick=async()=>{
     unlockAudio();
     if(!S.plan.dep.rwy||!S.plan.arr.rwy){$('rvVoices').innerHTML='<span class="err">Add both runways first.</span>';return;}
     S.f={};
     startFlight();S.f.appType=$('rvApp').value;
+    if(MAP.map){mapRoute();MAP.trail.setLatLngs([]);}
     $('log').innerHTML='';show('flight');startTraffic();
     RADIOS.L={act:'',sby:fnorm(facOf('clr').freq)};RADIOS.C={act:fnorm(facOf('datis').freq),sby:''};RADIOS.R={act:'121.500',sby:''};
     RADIO.sel='L';RADIO.mic='L';RADIO.rx={L:true,C:false,R:false};RADIO.off=false;RADIO.hf='';renderChart();setTimeout(fitPanels,0);
     SET.startAt=$('rvStartAt').value;saveSet();
+    $('partial').textContent='Checking which runways are in use...';
+    const sideNow=SET.startAt==='final'?'arr':'dep';
+    const lr=await applyLiveRunway(sideNow);$('partial').textContent='';
+    if(lr&&!lr.keep)sys(`${S.plan[sideNow].icao} is using runway ${lr.rwy} right now (from ${lr.src}), so your ${sideNow==='dep'?'departure':'arrival'} runway changed from ${lr.from} to ${lr.rwy}.`+(sideNow==='dep'?' Set up your FMS for the new runway.':''));
+    else if(lr&&lr.keep)sys(`Runway ${lr.rwy} is in use at ${S.plan[sideNow].icao} right now (from ${lr.src}).`);
     if(SET.startAt==='rwy'||SET.startAt==='final')quickStart(SET.startAt);
     else sys(`VHF C is set to ${facOf('datis').name}. Tap its window on the audio panel (REC) to hear the weather. VHF L has ${facOf('clr').name} ${fshow(facOf('clr').freq)} in standby: press the transfer key, then call for your clearance.`);
     micNote();renderFlight();
@@ -2728,6 +2958,7 @@ function init(){
   initPttBind();
   $('xpdrBtn').onclick=()=>{unlockAudio();xpConnect();};renderXpdr();
   $('rpBtn').onclick=()=>{unlockAudio();rpConnect();};renderRp();
+  $('mapBox').addEventListener('toggle',()=>{if($('mapBox').open)mapInit().then(()=>{if(MAP.map)MAP.map.invalidateSize();mapRoute();});});
   $('simBtn').onclick=()=>{unlockAudio();simToggle();};$('simAuto').onchange=e=>{SET.simAuto=e.target.checked;saveSet();renderSim();};renderSim();
   window.addEventListener('blur',()=>pttUp());
   wireKnob($('kOuter'),'outer');wireKnob($('kInner'),'inner');
