@@ -114,6 +114,12 @@ a{color:var(--blue)}
 .loghead{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.06em}
 .logbtns{display:flex;gap:4px}.logbtns button{font-size:12px;padding:3px 9px;width:auto;min-height:0;background:transparent;border:1px solid var(--line);color:var(--mute);border-radius:6px;text-transform:none;letter-spacing:0}
 .logbtns button.on{color:var(--text,#e6edf3);border-color:var(--blue)}
+.xpdr{display:flex;align-items:center;gap:10px;margin-top:8px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;flex-wrap:wrap}
+.xpdr .xlab{color:var(--mute);font-size:11px;letter-spacing:.08em}
+.xpdr .xcode{font-family:DSEG7,monospace;font-size:20px;color:#9aa5ae;letter-spacing:2px}
+.xpdr.ok .xcode{color:var(--green)}.xpdr.bad .xcode{color:#ffb347}
+.xpdr .xmode{font-weight:600}.xpdr .xnote{color:var(--mute);flex:1;min-width:120px}
+.xpdr button{width:auto;font-size:12px;padding:4px 10px;min-height:0}
 #log>.msg{flex-shrink:0}
 #log.compact{gap:4px}
 #log.compact>.msg:not(.recent):not(.open){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:4px 10px;font-size:13px;cursor:pointer;max-width:100%}
@@ -317,6 +323,7 @@ td input{padding:6px 8px}
       <div id="rWant" class="want"></div>
     </div>
     <div class="prog" id="prog"></div>
+    <div class="xpdr" id="xpdrBar"><span class="xlab">ATC XPDR</span><span id="xpdrCode" class="xcode">----</span><span id="xpdrMode" class="xmode"></span><span id="xpdrNote" class="xnote"></span><button type="button" id="xpdrBtn">Connect panel</button></div>
   </div>
   <div class="loghead"><span>Radio log</span><span class="logbtns"><button type="button" class="lv" data-lv="compact">Compact</button><button type="button" class="lv" data-lv="full">Full</button><button type="button" id="logClear">Clear</button></span></div>
   <div id="log" class="compact"></div>
@@ -1743,13 +1750,13 @@ const HANDLERS={
     if(st==='faa'){
       issue(key,M(P_cs(),', cleared to the ',p.arr.call,' airport via ',via,', then as filed. Maintain ',a,', expect ',cr,' ',{t:'10 minutes',s:'one zero minutes'},' after departure. Departure frequency ',dq,', squawk ',sq,'.'),
         [R_num(a.v,a.t,a.s),R_num(dq.v,'departure '+dq.t,'departure '+dq.s),R_num(sq.v,'squawk '+sq.t,'squawk '+sq.s)],
-        ()=>{S.f.cleared=true;if(key==='gnd'||facOf('clr').noCD){atc(key,M(P_cs(),', readback correct. Advise ready to taxi.'));}else{const g=P_freq(facOf('gnd').freq,st);atc('clr',M(P_cs(),', readback correct. Contact Ground ',g,' when ready to taxi.'));}S.phase='gnd_out';S.cur='gnd';},
+        ()=>{S.f.cleared=true;if(key==='gnd'||facOf('clr').noCD){atc(key,M(P_cs(),', readback correct. Advise ready to taxi.'));}else{const g=P_freq(facOf('gnd').freq,st);atc('clr',M(P_cs(),', readback correct. Contact Ground ',g,' when ready to taxi.'));}S.phase='gnd_out';S.cur='gnd';later(20000,()=>xpCheck('clr'));},
         `Cleared to ${p.arr.call} via ${via.t}, maintain ${a.t}, departure ${dq.t}, squawk ${sq.t}, ${S.csInfo.t}.`);
     }else{
       const climb=a.ft>=ta?'climb ':'climb altitude ';
       issue(key,M(P_cs(),', cleared to ',p.arr.call,' via ',via,', runway ',rw,', ',climb,a,', squawk ',sq,'.'),
         [R_num(rw.v,'runway '+rw.t,'runway '+rw.s),R_num(a.v,a.t,a.s),R_num(sq.v,'squawk '+sq.t,'squawk '+sq.s)],
-        ()=>{S.f.cleared=true;if(key==='gnd'){atc('gnd',M(P_cs(),', readback correct. Report ready for push and start.'));}else{const g=P_freq(facOf('gnd').freq,st);atc('clr',M(P_cs(),', readback correct. Contact Ground ',g,' for push and start.'));}S.phase='gnd_out';S.cur='gnd';},
+        ()=>{S.f.cleared=true;if(key==='gnd'){atc('gnd',M(P_cs(),', readback correct. Report ready for push and start.'));}else{const g=P_freq(facOf('gnd').freq,st);atc('clr',M(P_cs(),', readback correct. Contact Ground ',g,' for push and start.'));}S.phase='gnd_out';S.cur='gnd';later(20000,()=>xpCheck('clr'));},
         `Cleared to ${p.arr.call} via ${via.t}, runway ${rw.t}, ${climb}${a.t}, squawk ${sq.t}, ${S.csInfo.t}.`);
     }
   },
@@ -1803,7 +1810,7 @@ const HANDLERS={
     const climb=st==='faa'?'climb and maintain ':(a.ft>=ta?'climb ':'climb altitude ');
     const req=[R_num(a.v,a.t,a.s)];if(fx)req.push(R_re(/direct/,'direct '+fx,'direct '+fixSpoken(fx)));
     issue('dep',M(P_cs(),', ',facOf('dep').name,', ',st==='faa'?'radar contact. ':'identified. ',climb.charAt(0).toUpperCase()+climb.slice(1),a,'.',fx?{t:' Proceed direct '+fx+'.',s:' Proceed direct '+fixSpoken(fx)+'.'}:null),
-      req,()=>sys('Climb out. Tap "Leaving departure airspace" around 10,000 ft.'),`${climb}${a.t}${fx?', direct '+fx:''}, ${S.csInfo.t}.`);
+      req,()=>{sys('Climb out. Tap "Leaving departure airspace" around 10,000 ft.');later(6000,()=>xpCheck('dep'));},`${climb}${a.t}${fx?', direct '+fx:''}, ${S.csInfo.t}.`);
   },
   ctr(n){
     const key=S.cur,st=facOf(key).style;
@@ -2043,7 +2050,7 @@ function startFlight(){
   clearTimers();
   S.phase='clr';S.cur='clr';S.f={};S.taxiQ=null;S.arrTaxi=null;S.taxiTo='';S.pending=null;S.last=null;S.score={ok:0,miss:0,misses:[]};S.tips=new Set();
   let sq;do{sq=String(1+Math.floor(Math.random()*6))+[0,0,0].map(()=>Math.floor(Math.random()*8)).join('');}while(/00$/.test(sq)||/^7[567]/.test(sq));
-  S.squawk=sq;
+  S.squawk=sq;XP.warned={};xpSendAssigned();renderXpdr();
   const L='ABCDEFGHIJKLMNOPQRSTUVWXYZ';S.atis={dep:pick(L.split('')),arr:pick(L.split(''))};
   S.csInfo=callsignInfo(S.plan.callsign,S.plan.type,facOf('clr').style==='faa');
 }
@@ -2185,6 +2192,54 @@ function pttUp(){
     if(CAP.dict){CAP.dict.stop().catch(()=>{});}
     else if(MIC.rec){try{MIC.rec.stop();}catch(e){}}
   },Math.max(wait,250));
+}
+// Squawk transponder panel (3D-printed 777 ATC panel) over Bluetooth, using the Nordic UART service.
+const NUS='6e400001-b5a3-f393-e0a9-e50e24dcca9e',NUS_RX='6e400002-b5a3-f393-e0a9-e50e24dcca9e',NUS_TX='6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+const XP={dev:null,rx:null,on:false,code:'',mode:-1,ident:false,buf:'',warned:{}};
+const XP_MODES=['STBY','ALT OFF','XPNDR','TA ONLY','TA/RA'];
+function xpAltOn(){return XP.mode>=2;}
+function renderXpdr(){
+  if(HEADLESS)return;const bar=$('xpdrBar');if(!bar)return;
+  $('xpdrBtn').textContent=XP.on?'Disconnect':'Connect panel';
+  $('xpdrCode').textContent=XP.on?XP.code||'----':'----';
+  $('xpdrMode').textContent=XP.on&&XP.mode>=0?XP_MODES[XP.mode]+(XP.ident?'  IDENT':''):'';
+  const want=S.squawk||'';
+  const ok=XP.on&&want&&XP.code===want&&xpAltOn();
+  bar.classList.toggle('ok',!!ok);bar.classList.toggle('bad',!!(XP.on&&want&&!ok&&S.phase!=='clr'));
+  $('xpdrNote').textContent=!XP.on?(navigator.bluetooth?'Your 3D-printed transponder (Chrome on a computer or Android).':'Bluetooth needs Chrome on a computer or Android.')
+    :!want?'Connected.':XP.code!==want?`ATC assigned ${want}.`:!xpAltOn()?'Code set. Turn the mode knob to XPNDR, TA ONLY or TA/RA.':'Squawking '+want+'.';
+}
+function xpSendAssigned(){if(!XP.on||!XP.rx)return;const t=new TextEncoder().encode('A'+(S.squawk||'')+'\n');XP.rx.writeValue(t).catch(()=>{});}
+function xpLine(line){
+  const m=line.match(/^C([0-7]{4})\s+M(\d)\s+I(\d)/);if(!m)return;
+  const prevIdent=XP.ident;XP.code=m[1];XP.mode=+m[2];XP.ident=m[3]==='1';
+  if(XP.ident&&!prevIdent&&S.phase!=='idle')sys('Transponder: IDENT.');
+  renderXpdr();
+}
+async function xpConnect(){
+  if(XP.on){try{XP.dev.gatt.disconnect();}catch(e){}return;}
+  if(!navigator.bluetooth){sys('Bluetooth panels need Chrome on a Mac, Windows PC or Android phone. On the Claude page, open the GitHub version instead.');return;}
+  try{
+    const dev=await navigator.bluetooth.requestDevice({filters:[{services:[NUS]},{namePrefix:'Squawk'}],optionalServices:[NUS]});
+    XP.dev=dev;dev.addEventListener('gattserverdisconnected',()=>{XP.on=false;XP.rx=null;renderXpdr();sys('Transponder panel disconnected.');});
+    const srv=await dev.gatt.connect();const svc=await srv.getPrimaryService(NUS);
+    XP.rx=await svc.getCharacteristic(NUS_RX);const tx=await svc.getCharacteristic(NUS_TX);
+    tx.addEventListener('characteristicvaluechanged',e=>{XP.buf+=new TextDecoder().decode(e.target.value);let i;while((i=XP.buf.indexOf('\n'))>=0){const l=XP.buf.slice(0,i).trim();XP.buf=XP.buf.slice(i+1);if(l)xpLine(l);}});
+    await tx.startNotifications();XP.on=true;renderXpdr();xpSendAssigned();
+    XP.rx.writeValue(new TextEncoder().encode('?\n')).catch(()=>{});
+    sys('Transponder panel connected.');
+  }catch(e){if(e&&e.name!=='NotFoundError')sys('Couldn\'t connect to the transponder panel: '+(e.message||e));}
+}
+// ATC checks: after the clearance, and when departure gets you on radar
+function xpCheck(where){
+  if(!XP.on||!S.squawk||XP.warned[where])return;
+  const wrong=XP.code!==S.squawk,noAlt=!xpAltOn();
+  if(!wrong&&!noAlt)return;
+  XP.warned[where]=true;
+  if(where==='clr'){if(wrong)sys(`Set ${S.squawk} on your transponder. It shows ${XP.code||'nothing'}.`);return;}
+  const key=where,st=facOf(key).style;
+  if(wrong)atc(key,M(P_cs(),', reset transponder, squawk ',P_sq(S.squawk),'.'));
+  else atc(key,M(P_cs(),st==='faa'?', squawk altitude.':', squawk Charlie.'));
 }
 // Custom push-to-talk: any keyboard key (foot pedals and page turners act like keys) or a button
 // on a game controller connected to this phone or computer (read with the browser's Gamepad API).
@@ -2426,6 +2481,7 @@ function init(){
     if(e.code!==(SET.pttKey||'Space')||typing()||$('flight').classList.contains('hidden'))return;e.preventDefault();if(!e.repeat)pttDown();});
   document.addEventListener('keyup',e=>{if(e.code!==(SET.pttKey||'Space')||$('flight').classList.contains('hidden'))return;e.preventDefault();pttUp();});
   initPttBind();
+  $('xpdrBtn').onclick=()=>{unlockAudio();xpConnect();};renderXpdr();
   window.addEventListener('blur',()=>pttUp());
   wireKnob($('kOuter'),'outer');wireKnob($('kInner'),'inner');
   window.addEventListener('resize',fitPanels);fitPanels();
