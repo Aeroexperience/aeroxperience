@@ -323,6 +323,7 @@ td input{padding:6px 8px}
       <div id="rWant" class="want"></div>
     </div>
     <div class="prog" id="prog"></div>
+    <div class="xpdr" id="rpBar"><span class="xlab">RADIO PANEL</span><span id="rpNote" class="xnote"></span><button type="button" id="rpBtn">Connect panel</button></div>
     <div class="xpdr" id="xpdrBar"><span class="xlab">ATC XPDR</span><span id="xpdrCode" class="xcode">----</span><span id="xpdrMode" class="xmode"></span><span id="xpdrNote" class="xnote"></span><button type="button" id="xpdrBtn">Connect panel</button></div>
   </div>
   <div class="loghead"><span>Radio log</span><span class="logbtns"><button type="button" class="lv" data-lv="compact">Compact</button><button type="button" class="lv" data-lv="full">Full</button><button type="button" id="logClear">Clear</button></span></div>
@@ -2119,6 +2120,7 @@ function renderRadio(){
   const c=facOf(S.cur),ok=fnorm(micFreq())===fnorm(c.freq);
   const w=$('rWant');w.className='want'+(ok?' ok':'');
   w.textContent=S.phase==='done'?'':ok?`On frequency with ${c.name}.`:`ATC wants you on ${c.name} ${fshow(c.freq)} (talking on VHF ${RADIO.mic}).`;
+  if(RP.on)rpHint(S.phase==='done'||ok?'':c.freq);
   $('kOuter').style.transform=`rotate(${KNOB.outer}deg)`;$('kInner').style.transform=`rotate(${KNOB.inner-KNOB.outer}deg)`;
 }
 function fitPanels(){for(const [w,id,hgt] of [['rtpWrap','rtp',240],['acpWrap','acp',104]]){const W=$(w),P=$(id);if(!W||!P)continue;const s=Math.min(1.3,W.clientWidth/480);P.style.transform='scale('+s+')';W.style.height=(hgt*s)+'px';}}
@@ -2220,7 +2222,7 @@ async function xpConnect(){
   if(XP.on){try{XP.dev.gatt.disconnect();}catch(e){}return;}
   if(!navigator.bluetooth){sys('Bluetooth panels need Chrome on a Mac, Windows PC or Android phone. On the Claude page, open the GitHub version instead.');return;}
   try{
-    const dev=await navigator.bluetooth.requestDevice({filters:[{services:[NUS]},{namePrefix:'Squawk'}],optionalServices:[NUS]});
+    const dev=await navigator.bluetooth.requestDevice({filters:[{name:'Squawk XPDR'}],optionalServices:[NUS]});
     XP.dev=dev;dev.addEventListener('gattserverdisconnected',()=>{XP.on=false;XP.rx=null;renderXpdr();sys('Transponder panel disconnected.');});
     const srv=await dev.gatt.connect();const svc=await srv.getPrimaryService(NUS);
     XP.rx=await svc.getCharacteristic(NUS_RX);const tx=await svc.getCharacteristic(NUS_TX);
@@ -2229,6 +2231,43 @@ async function xpConnect(){
     XP.rx.writeValue(new TextEncoder().encode('?\n')).catch(()=>{});
     sys('Transponder panel connected.');
   }catch(e){if(e&&e.name!=='NotFoundError')sys('Couldn\'t connect to the transponder panel: '+(e.message||e));}
+}
+// Squawk radio tuning panel (3D-printed 777 RTP) over Bluetooth. The panel is in charge:
+// Squawk's radios follow whatever it shows, and Squawk sends back the frequency ATC wants.
+const RP={dev:null,rx:null,on:false,buf:'',sync:false,hint:null};
+function rpSend(s){if(RP.on&&RP.rx)RP.rx.writeValue(new TextEncoder().encode(s+'\n')).catch(()=>{});}
+function rpHint(f){const h=f?String(Math.round(parseFloat(f)*1000)).padStart(6,'0'):'';if(h===RP.hint)return;RP.hint=h;rpSend('H'+h);}
+function renderRp(){
+  if(HEADLESS)return;const bar=$('rpBar');if(!bar)return;
+  $('rpBtn').textContent=RP.on?'Disconnect':'Connect panel';bar.classList.toggle('ok',RP.on&&!RP.sync);
+  $('rpNote').textContent=!RP.on?(navigator.bluetooth?'Your 3D-printed radio panel. Squawk tunes to whatever it shows.':'Bluetooth needs Chrome on a computer or Android.')
+    :RP.sync?'Syncing with the sim. Hold the transfer button 3 seconds when done.':`Connected. The panel is tuning VHF ${RADIO.sel}; the on-screen knobs follow it.`;
+}
+function rpLine(line){
+  const m=line.match(/^V([LCR])\s+L(\d{6}),(\d{6})\s+C(\d{6}),(\d{6})\s+R(\d{6}),(\d{6})(?:\s+S(\d))?/);if(!m)return false;
+  const v={L:[m[2],m[3]],C:[m[4],m[5]],R:[m[6],m[7]]},mhz=x=>fnorm(x.slice(0,3)+'.'+x.slice(3));
+  const moved=[];
+  for(const r of ['L','C','R']){const a=mhz(v[r][0]);if(a!==fnorm(RADIOS[r].act))moved.push(r);RADIOS[r].act=a;RADIOS[r].sby=mhz(v[r][1]);}
+  RP.sync=m[8]==='1';RADIO.hf='';RADIO.off=false;RADIO.sel=m[1];
+  const heard=moved.filter(r=>RADIO.rx[r]||r===RADIO.mic);
+  if(heard.length)speechFlush();
+  renderRadio();renderRp();
+  for(const r of heard)atisCheck(RADIOS[r].act);
+  return true;
+}
+async function rpConnect(){
+  if(RP.on){try{RP.dev.gatt.disconnect();}catch(e){}return;}
+  if(!navigator.bluetooth){sys('Bluetooth panels need Chrome on a Mac, Windows PC or Android phone. On the Claude page, open the GitHub version instead.');return;}
+  try{
+    const dev=await navigator.bluetooth.requestDevice({filters:[{name:'Squawk RADIO'}],optionalServices:[NUS]});
+    RP.dev=dev;dev.addEventListener('gattserverdisconnected',()=>{RP.on=false;RP.rx=null;RP.sync=false;renderRp();sys('Radio panel disconnected.');});
+    const srv=await dev.gatt.connect();const svc=await srv.getPrimaryService(NUS);
+    RP.rx=await svc.getCharacteristic(NUS_RX);const tx=await svc.getCharacteristic(NUS_TX);
+    tx.addEventListener('characteristicvaluechanged',e=>{RP.buf+=new TextDecoder().decode(e.target.value);let i;while((i=RP.buf.indexOf('\n'))>=0){const l=RP.buf.slice(0,i).trim();RP.buf=RP.buf.slice(i+1);if(l)rpLine(l);}});
+    await tx.startNotifications();RP.on=true;RP.hint=null;renderRp();renderRadio();
+    rpSend('?');
+    sys('Radio panel connected. Squawk now follows its frequencies.');
+  }catch(e){if(e&&e.name!=='NotFoundError')sys('Couldn\'t connect to the radio panel: '+(e.message||e));}
 }
 // ATC checks: after the clearance, and when departure gets you on radar
 function xpCheck(where){
@@ -2482,6 +2521,7 @@ function init(){
   document.addEventListener('keyup',e=>{if(e.code!==(SET.pttKey||'Space')||$('flight').classList.contains('hidden'))return;e.preventDefault();pttUp();});
   initPttBind();
   $('xpdrBtn').onclick=()=>{unlockAudio();xpConnect();};renderXpdr();
+  $('rpBtn').onclick=()=>{unlockAudio();rpConnect();};renderRp();
   window.addEventListener('blur',()=>pttUp());
   wireKnob($('kOuter'),'outer');wireKnob($('kInner'),'inner');
   window.addEventListener('resize',fitPanels);fitPanels();
