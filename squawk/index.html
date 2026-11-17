@@ -114,6 +114,7 @@ a{color:var(--blue)}
 .loghead{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.06em}
 .logbtns{display:flex;gap:4px}.logbtns button{font-size:12px;padding:3px 9px;width:auto;min-height:0;background:transparent;border:1px solid var(--line);color:var(--mute);border-radius:6px;text-transform:none;letter-spacing:0}
 .logbtns button.on{color:var(--text,#e6edf3);border-color:var(--blue)}
+.xpdr[hidden]{display:none!important}
 .xpdr{display:flex;align-items:center;gap:10px;margin-top:8px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;flex-wrap:wrap}
 .xpdr .xlab{color:var(--mute);font-size:11px;letter-spacing:.08em}
 .xpdr .xcode{font-family:DSEG7,monospace;font-size:20px;color:#9aa5ae;letter-spacing:2px}
@@ -326,8 +327,8 @@ td input{padding:6px 8px}
     </div>
     <div class="prog" id="prog"></div>
     <div class="xpdr" id="simBar"><span class="xlab">SIM DATA</span><span id="simVals" class="xsim"></span><span id="simNote" class="xnote"></span><label class="xauto"><input type="checkbox" id="simAuto"> Auto calls</label><button type="button" id="simBtn">Connect</button></div>
-    <div class="xpdr" id="rpBar"><span class="xlab">RADIO PANEL</span><span id="rpNote" class="xnote"></span><button type="button" id="rpBtn">Connect panel</button></div>
-    <div class="xpdr" id="xpdrBar"><span class="xlab">ATC XPDR</span><span id="xpdrCode" class="xcode">----</span><span id="xpdrMode" class="xmode"></span><span id="xpdrNote" class="xnote"></span><button type="button" id="xpdrBtn">Connect panel</button></div>
+    <div class="xpdr" id="rpBar" hidden><span class="xlab">RADIO PANEL</span><span id="rpNote" class="xnote"></span><button type="button" id="rpBtn">Connect panel</button></div>
+    <div class="xpdr" id="xpdrBar" hidden><span class="xlab">ATC XPDR</span><span id="xpdrCode" class="xcode">----</span><span id="xpdrMode" class="xmode"></span><span id="xpdrNote" class="xnote"></span><button type="button" id="xpdrBtn">Connect panel</button></div>
   </div>
   <div class="loghead"><span>Radio log</span><span class="logbtns"><button type="button" class="lv" data-lv="compact">Compact</button><button type="button" class="lv" data-lv="full">Full</button><button type="button" id="logClear">Clear</button></span></div>
   <div id="log" class="compact"></div>
@@ -2199,6 +2200,8 @@ function pttUp(){
   },Math.max(wait,250));
 }
 // Squawk transponder panel (3D-printed 777 ATC panel) over Bluetooth, using the Nordic UART service.
+// The RADIO PANEL and ATC XPDR bars are hidden until the panels are built: remove `hidden` from
+// #rpBar and #xpdrBar in the HTML to bring them back. The code below stays ready.
 const NUS='6e400001-b5a3-f393-e0a9-e50e24dcca9e',NUS_RX='6e400002-b5a3-f393-e0a9-e50e24dcca9e',NUS_TX='6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 const XP={dev:null,rx:null,on:false,code:'',mode:-1,ident:false,buf:'',warned:{}};
 const XP_MODES=['STBY','ALT OFF','XPNDR','TA ONLY','TA/RA'];
