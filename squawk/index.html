@@ -100,6 +100,11 @@ a{color:var(--blue)}
 .rbot .row input{min-width:0;flex:1}
 .rbot .note{white-space:normal}
 .want{font-size:13px;margin-top:6px;color:var(--amber)}
+.wantrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.wantrow .want{flex:1;min-width:160px}
+.wantrow button{width:auto;font-size:12px;padding:4px 10px;min-height:0;margin-top:6px}
+.wantrow .xauto,.copi .xauto{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--mute);margin-top:6px}.xauto input{width:auto;margin:0}
+.copi{display:flex;gap:14px;flex-wrap:wrap;margin-top:6px}
+.msg.dev{border-left:3px solid #ff6b6b}
 .want.ok{color:var(--green)}
 #fchart td{cursor:pointer}
 .com{display:flex;align-items:center;gap:12px;background:#05090c;border:1px solid var(--line);border-radius:14px;padding:10px 14px}
@@ -114,6 +119,7 @@ a{color:var(--blue)}
 .loghead{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.06em}
 .logbtns{display:flex;gap:4px}.logbtns button{font-size:12px;padding:3px 9px;width:auto;min-height:0;background:transparent;border:1px solid var(--line);color:var(--mute);border-radius:6px;text-transform:none;letter-spacing:0}
 .logbtns button.on{color:var(--text,#e6edf3);border-color:var(--blue)}
+.xpdr[hidden]{display:none!important}
 .xpdr{display:flex;align-items:center;gap:10px;margin-top:8px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;flex-wrap:wrap}
 .xpdr .xlab{color:var(--mute);font-size:11px;letter-spacing:.08em}
 .xpdr .xcode{font-family:DSEG7,monospace;font-size:20px;color:#9aa5ae;letter-spacing:2px}
@@ -278,6 +284,13 @@ td input{padding:6px 8px}
   <div class="card">
     <h2>Check your flight</h2>
     <div id="rv"></div>
+    <label class="startat" style="display:block;margin-top:12px">Start at
+      <select id="rvStartAt">
+        <option value="gate">The gate (full flight: clearance, taxi, takeoff, landing)</option>
+        <option value="rwy">The runway, ready for takeoff (skip clearance and taxi)</option>
+        <option value="final">Final approach (just the landing)</option>
+      </select>
+    </label>
     <div class="row" style="margin-top:12px">
       <button id="rvBack">Back</button>
       <button id="rvTest">Hear the voices</button>
@@ -322,12 +335,12 @@ td input{padding:6px 8px}
     <div class="below">
       <div class="note" id="rActName"></div>
       <div class="row"><input id="rType" inputmode="decimal" placeholder="Type a frequency for the selected radio"><button id="rTypeGo" style="flex:none">Tune</button></div>
-      <div id="rWant" class="want"></div>
+      <div class="wantrow"><div id="rWant" class="want"></div><button type="button" id="tuneBtn">Auto tune</button><label class="xauto"><input type="checkbox" id="autoTune"> Always</label></div>
     </div>
     <div class="prog" id="prog"></div>
     <div class="xpdr" id="simBar"><span class="xlab">SIM DATA</span><span id="simVals" class="xsim"></span><span id="simNote" class="xnote"></span><label class="xauto"><input type="checkbox" id="simAuto"> Auto calls</label><button type="button" id="simBtn">Connect</button></div>
-    <div class="xpdr" id="rpBar"><span class="xlab">RADIO PANEL</span><span id="rpNote" class="xnote"></span><button type="button" id="rpBtn">Connect panel</button></div>
-    <div class="xpdr" id="xpdrBar"><span class="xlab">ATC XPDR</span><span id="xpdrCode" class="xcode">----</span><span id="xpdrMode" class="xmode"></span><span id="xpdrNote" class="xnote"></span><button type="button" id="xpdrBtn">Connect panel</button></div>
+    <div class="xpdr" id="rpBar" hidden><span class="xlab">RADIO PANEL</span><span id="rpNote" class="xnote"></span><button type="button" id="rpBtn">Connect panel</button></div>
+    <div class="xpdr" id="xpdrBar" hidden><span class="xlab">ATC XPDR</span><span id="xpdrCode" class="xcode">----</span><span id="xpdrMode" class="xmode"></span><span id="xpdrNote" class="xnote"></span><button type="button" id="xpdrBtn">Connect panel</button></div>
   </div>
   <div class="loghead"><span>Radio log</span><span class="logbtns"><button type="button" class="lv" data-lv="compact">Compact</button><button type="button" class="lv" data-lv="full">Full</button><button type="button" id="logClear">Clear</button></span></div>
   <div id="log" class="compact"></div>
@@ -335,6 +348,7 @@ td input{padding:6px 8px}
     <div class="lab">Suggested call</div>
     <div class="txt" id="hintTxt"></div>
     <button id="hintSend">Send this call</button>
+    <div class="copi"><label class="xauto"><input type="checkbox" id="copVoice"> Copilot says my calls</label><label class="xauto"><input type="checkbox" id="copAuto"> Copilot does readbacks</label></div>
   </div>
   <div class="events" id="events"></div>
   <details class="card" style="padding:10px 14px"><summary>Frequency chart</summary><table id="fchart"></table><p class="muted">Tap a frequency to load it into standby.</p></details>
@@ -658,7 +672,7 @@ function numEq(a,b){const lz=x=>x.replace(/^0+(?=\d)/,'');const d=x=>lz(x.replac
 function hasNum(set,v){for(const c of set)if(numEq(c,String(v)))return true;return false;}
 
 /* ================= state ================= */
-const DEF={simAuto:true,traffic:'realistic',vatsim:true,showTraffic:true,engine:'auto',accent:'local',rate:1.0,strict:'strict',ai:true,radio:true,buzz:'real',gpu:false,logView:'compact',pttKey:'Space',pttPad:null,sbUser:''};
+const DEF={startAt:'gate',copilot:true,copilotAuto:false,autoTune:false,simAuto:true,traffic:'realistic',vatsim:true,showTraffic:true,engine:'auto',accent:'local',rate:1.0,strict:'strict',ai:true,radio:true,buzz:'real',gpu:false,logView:'compact',pttKey:'Space',pttPad:null,sbUser:''};
 let SET=Object.assign({},DEF);
 try{Object.assign(SET,JSON.parse(localStorage.getItem('squawk.settings')||'{}'));}catch(e){}
 function saveSet(){try{localStorage.setItem('squawk.settings',JSON.stringify(SET));}catch(e){}}
@@ -1039,7 +1053,7 @@ async function playAudio(blob,f,fixedRate){
     // small pitch differences make each controller and pilot sound like a different person
     src.playbackRate.value=(fixedRate?1+((f.pitch||1)-1)*0.5:(f.pitch||1)*SET.rate);
     let out=src,hiss=null;
-    if(SET.radio){
+    if(SET.radio&&!f.cockpit){
       // VHF airband sound: narrow band, driven into clipping, compressed, with carrier hiss and crackle
       const P=BUZZ[SET.buzz]||BUZZ.real;
       const bq=(type,f,q,gain)=>{const x=actx.createBiquadFilter();x.type=type;x.frequency.value=f;if(q!=null)x.Q.value=q;if(gain!=null)x.gain.value=gain;return x;};
@@ -1149,6 +1163,17 @@ function setActive(f,fromSwap){
   const prev=RADIO.act;if(fnorm(f)!==fnorm(prev))speechFlush();RADIO.act=fnorm(f);if(!fromSwap&&prev)RADIO.sby=prev;
   renderRadio();
   if(RADIO.rx[RADIO.sel]||RADIO.sel===RADIO.mic)atisCheck(RADIO.act);
+}
+// Auto tune: put the frequency ATC wants on the radio you talk on (VHF with the green mic light).
+function autoTune(manual){
+  if(!S.fac||S.phase==='idle'||S.phase==='done')return false;
+  const c=facOf(S.cur);if(!c||!c.freq)return false;
+  const want=fnorm(c.freq),r=RADIOS[RADIO.mic];
+  if(fnorm(r.act)===want){if(manual)sys(`Already on ${c.name}.`);return false;}
+  const prev=r.act;r.act=want;if(prev)r.sby=prev;
+  speechFlush();renderRadio();
+  sys(`Copilot tuned VHF ${RADIO.mic} to ${c.name} ${fshow(want)}.`);
+  return true;
 }
 function atisCheck(f){const k=facOnFreq(f);if(k==='datis'||k==='aatis')playAtis(k==='datis'?'dep':'arr');}
 function swapRadio(){if(RADIO.off||RADIO.hf)return;const a=RADIO.act;RADIO.act=RADIO.sby;RADIO.sby=a;setActive(RADIO.act,true);}
@@ -1627,15 +1652,15 @@ function trafficLabel(side){const lv=trafficLevel(S.plan[side].icao,TAXI[side]);
 /* ================= core radio ================= */
 function facOf(key){return S.fac[key];}
 function atc(key,msg){
-  const f=facOf(key);S.last={key,msg};
+  const f=facOf(key);S.last={key,msg};noteAssigned(msg.t);
   if(!onFreq(key)){sys(`You missed a call from ${f.name}. Your talk radio (VHF ${RADIO.mic}) is on ${fshow(micFreq())}, not ${fshow(f.freq)}.`);return speakQ;}
   ui.atc(f,msg);
   return enqueueSpeech(f,msg.s);
 }
 function sys(t){ui.sys(t);}
 function issue(key,msg,req,ok,rb){
-  atc(key,msg);
-  if(req&&req.length){S.pending={req,ok,rb,key,tries:0};S.pendingAt=Date.now();}
+  const said=atc(key,msg);
+  if(req&&req.length){S.pending={req,ok,rb,key,tries:0};S.pendingAt=Date.now();copilotAutoCheck(said);}
   else{S.pending=null;if(ok)ok();}
   ui.render();
 }
@@ -1694,9 +1719,43 @@ const RX={
 };
 function normText(t){return' '+String(t).toLowerCase().replace(/[’']/g,"'").replace(/[^a-z0-9.'\s]/g,' ').replace(/\s+/g,' ')+' ';}
 
-function pilotSay(text){
+// "Copilot does readbacks": once ATC has finished talking, the copilot reads back the clearance.
+function copilotAutoCheck(after){
+  if(!SET.copilotAuto||!S.pending)return;
+  const p=S.pending;
+  Promise.resolve(after||speakQ).then(()=>setTimeout(()=>{
+    if(S.pending!==p||!SET.copilotAuto)return;
+    if(!onFreq(p.key))return;          // we didn't hear it, so nothing to read back
+    pilotSay(p.rb,{copilot:true});
+  },HEADLESS?0:700));
+}
+// Your copilot: reads your typed or suggested calls out loud in the cockpit (no radio sound),
+// like the copilot voice in MSFS 2024's ATC. Not used when you talk with push to talk.
+let COPILOT=null;
+function copilotObj(){
+  if(COPILOT&&COPILOT.home===S.plan.dep.icao)return COPILOT;
+  const region=regionFor(S.plan.dep.icao),idx=23;
+  COPILOT={name:'Copilot',home:S.plan.dep.icao,region,style:region.style,vIdx:idx,pitch:0.97,cockpit:true};
+  COPILOT.voice=pickVoice(langsFor(region),idx);COPILOT.piper=piperVoiceFor(region);return COPILOT;
+}
+function pilotSpoken(t){
+  let x=' '+String(t)+' ';
+  if(S.csInfo&&S.csInfo.t)x=x.split(S.csInfo.t).join(' '+S.csInfo.s+' ');
+  x=x.replace(/\bFL ?(\d{2,3})\b/gi,(m,a)=>' flight level '+digitsW(a)+' ')
+     .replace(/\b(\d{1,3}),(\d{3})\b/g,(m,a,b)=>' '+altWords(+(a+b))+' ')
+     .replace(/\b(\d{3})\.(\d{1,3})\b/g,(m,a,b)=>' '+digitsW(a)+' '+DECIMAL+' '+digitsW(b)+' ')
+     .replace(/\b(\d{1,2})([LRC])\b/g,(m,a,b)=>' '+digitsW(a)+' '+({L:'left',R:'right',C:'center'})[b]+' ');
+  x=x.replace(/([A-Za-z])(\d)/g,'$1 $2').replace(/\b[A-Z]{4,6}\b/g,w=>/^[KCEPL][A-Z]{3}$/.test(w)?w:fixSpoken(w));
+  return spokenClean(x).replace(/\s+([,.])/g,'$1');
+}
+function copilotSays(text){
+  if(!SET.copilot||HEADLESS)return;
+  const f=copilotObj();ui.copilot&&ui.copilot();enqueueSpeech(f,pilotSpoken(text));
+}
+function pilotSay(text,opts){
   text=String(text||'').trim();if(!text||!S.fac)return;
   ui.pilot(text);
+  if(opts&&opts.copilot)copilotSays(text);
   const n=normText(text);
   if(RADIO.check){
     const k=facOnFreq(micFreq());
@@ -2050,9 +2109,28 @@ function hint(){
 }
 function hintIsCall(){const h=hint();return S.pending||(/,/.test(h)&&!/^(Taxi|Take|Climb|Descend|Land|Waiting|Line|Continue|Flight)/.test(h));}
 
+// Quick starts: skip to the runway (already cleared IFR, tower gives the takeoff clearance)
+// or to final approach (tower gives the landing clearance). Radios are tuned for you.
+function quickStart(where){
+  const tune=(key,next)=>{RADIOS.L={act:fnorm(facOf(key).freq),sby:fnorm(facOf(next).freq)};RADIO.sel='L';RADIO.mic='L';RADIOS.C={act:'',sby:''};renderRadio();};
+  if(where==='rwy'){
+    S.f.cleared=true;S.f.taxi=true;S.f.ready=true;S.phase='twr_out';S.cur='twr';
+    tune('twr','dep');
+    const rw=P_rwy(S.plan.dep.rwy);
+    sys(`Starting on runway ${rw.t}, already cleared to ${S.plan.arr.icao}. Squawk ${S.squawk}. VHF L is on ${facOf('twr').name}, with ${facOf('dep').name} ${fshow(facOf('dep').freq)} in standby for after takeoff.`);
+    later(2500,takeoffClearance);
+  }else{
+    S.f.cleared=true;S.f.taxi=true;S.f.tko=true;S.f.tkoClr=true;S.f.depIn=true;S.f.desc=true;S.f.appIn=true;S.f.appClr=true;
+    S.phase='twr_in';S.cur='atwr';
+    tune('atwr','agnd');
+    const rw=P_rwy(S.plan.arr.rwy);
+    sys(`Starting on final for runway ${rw.t} at ${S.plan.arr.icao}. VHF L is on ${facOf('atwr').name}, with ${facOf('agnd').name} ${fshow(facOf('agnd').freq)} in standby for after landing.`);
+    later(2500,landingClearance);
+  }
+}
 function startFlight(){
   clearTimers();
-  S.phase='clr';S.cur='clr';S.f={};S.taxiQ=null;S.arrTaxi=null;S.taxiTo='';S.pending=null;S.last=null;S.score={ok:0,miss:0,misses:[]};S.tips=new Set();
+  S.phase='clr';S.cur='clr';S.f={};S.assigned=null;SIM.dh={};S.taxiQ=null;S.arrTaxi=null;S.taxiTo='';S.pending=null;S.last=null;S.score={ok:0,miss:0,misses:[]};S.tips=new Set();
   let sq;do{sq=String(1+Math.floor(Math.random()*6))+[0,0,0].map(()=>Math.floor(Math.random()*8)).join('');}while(/00$/.test(sq)||/^7[567]/.test(sq));
   S.squawk=sq;XP.warned={};xpSendAssigned();renderXpdr();
   const L='ABCDEFGHIJKLMNOPQRSTUVWXYZ';S.atis={dep:pick(L.split('')),arr:pick(L.split(''))};
@@ -2068,10 +2146,11 @@ const ui={
   mark(ok,t){if(HEADLESS){(W.__log=W.__log||[]).push((ok?'  OK ':'  MISS ')+t);return;}const el=[...document.querySelectorAll('#log .pilot')].pop();if(el){const m=document.createElement('div');m.className='mark';m.style.color=ok?'var(--green)':'var(--red)';m.textContent=(ok?'✓ ':'✗ ')+t;el.appendChild(m);}},
   thinking(on){if(HEADLESS)return;$('partial').textContent=on?'ATC is thinking...':'';},
   render(){if(HEADLESS)return;renderFlight();},
+  dev(t){if(HEADLESS){(W.__log=W.__log||[]).push('DEV: '+t);return;}addMsg('sys dev','',t);},
   summary(){
     if(HEADLESS){(W.__log=W.__log||[]).push('DONE '+JSON.stringify(S.score));return;}
     const tot=S.score.ok+S.score.miss;
-    addMsg('sys','',`Flight complete. Readbacks right the first time: ${S.score.ok} of ${tot}.`+(S.score.misses.length?' Missed items: '+S.score.misses.join('; ')+'.':' Clean flight.'));
+    addMsg('sys','',`Flight complete. Readbacks right the first time: ${S.score.ok} of ${tot}.`+(S.score.misses.length?' Missed items: '+S.score.misses.join('; ')+'.':' Clean flight.')+(S.score.devs?` Pilot deviations: ${S.score.devs}.`:''));
     renderFlight();
   }
 };
@@ -2110,6 +2189,7 @@ function initLog(){
 }
 function show(id){for(const s of ['setup','review','flight'])$(s).classList.toggle('hidden',s!==id);W.scrollTo&&W.scrollTo(0,0);}
 function lcdText(f){const n=parseFloat(f);return isNaN(n)?'':n.toFixed(3);}
+let AUTOTUNING=false;
 function renderRadio(){
   if(HEADLESS||!S.fac)return;
   const hf=RADIO.hf;
@@ -2124,6 +2204,8 @@ function renderRadio(){
   const w=$('rWant');w.className='want'+(ok?' ok':'');
   w.textContent=S.phase==='done'?'':ok?`On frequency with ${c.name}.`:`ATC wants you on ${c.name} ${fshow(c.freq)} (talking on VHF ${RADIO.mic}).`;
   if(RP.on)rpHint(S.phase==='done'||ok?'':c.freq);
+  if(!HEADLESS){$('tuneBtn').hidden=ok||S.phase==='done';$('autoTune').checked=!!SET.autoTune;}
+  if(!ok&&SET.autoTune&&S.phase!=='done'&&!RP.on&&!AUTOTUNING){AUTOTUNING=true;speakQ.then(()=>setTimeout(()=>{AUTOTUNING=false;autoTune(false);},500));}
   $('kOuter').style.transform=`rotate(${KNOB.outer}deg)`;$('kInner').style.transform=`rotate(${KNOB.inner-KNOB.outer}deg)`;
 }
 function fitPanels(){for(const [w,id,hgt] of [['rtpWrap','rtp',240],['acpWrap','acp',104]]){const W=$(w),P=$(id);if(!W||!P)continue;const s=Math.min(1.3,W.clientWidth/480);P.style.transform='scale('+s+')';W.style.height=(hgt*s)+'px';}}
@@ -2199,6 +2281,8 @@ function pttUp(){
   },Math.max(wait,250));
 }
 // Squawk transponder panel (3D-printed 777 ATC panel) over Bluetooth, using the Nordic UART service.
+// The RADIO PANEL and ATC XPDR bars are hidden until the panels are built: remove `hidden` from
+// #rpBar and #xpdrBar in the HTML to bring them back. The code below stays ready.
 const NUS='6e400001-b5a3-f393-e0a9-e50e24dcca9e',NUS_RX='6e400002-b5a3-f393-e0a9-e50e24dcca9e',NUS_TX='6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 const XP={dev:null,rx:null,on:false,code:'',mode:-1,ident:false,buf:'',warned:{}};
 const XP_MODES=['STBY','ALT OFF','XPNDR','TA ONLY','TA/RA'];
@@ -2293,8 +2377,55 @@ const SIM_RULES={
   est:{n:3,ok:()=>{const b=simDist('arr'),h=simAgl('arr');return b!=null&&b<12&&(h==null||h<4500);}},
   vacate:{n:6,ok:d=>d.gs<30&&Math.abs(d.vs||0)<200},
 };
+// Pilot deviations: taxiing, taking off or landing without a clearance, or busting an assigned
+// altitude. ATC gives a "possible pilot deviation" warning with a (made-up 555) phone number to write down.
+function phoneFor(name){const h=hash(name||'atc');const ac=String(200+(h%700)).replace(/^(\d)(\d)(\d)$/,(m,a,b,c)=>a+(b==='9'?'8':b)+c);return ac+'-555-01'+String(h%100).padStart(2,'0');}
+function phoneSpoken(n){return n.split('-').map(g=>digitsW(g)).join(', ');}
+function deviation(key,what,follow){
+  S.f.devs=S.f.devs||[];if(S.f.devs.includes(what))return;S.f.devs.push(what);
+  S.score.devs=(S.score.devs||0)+1;
+  const f=facOf(key),num=phoneFor(f.name);
+  const lead={taxi:'stop. You were not cleared to taxi. Hold position.',tko:'you were not cleared for takeoff.',land:'you were not cleared to land.',alt:'altitude deviation.'}[what]||'';
+  const why={taxi:'taxiing without a clearance',tko:'taking off without a takeoff clearance',land:'landing without a landing clearance',alt:'leaving your assigned altitude'}[what];
+  S.pending=null;
+  atc(key,M(P_cs(),', ',lead,' Possible pilot deviation, advise you contact ',f.name,'. Here is a number for you to write down: ',{t:num,s:phoneSpoken(num)},'.',follow?' ':'',follow||null));
+  ui.dev&&ui.dev(`Possible pilot deviation (${why}). Write this down: ${f.name}, ${num}. (It's a made-up 555 number for practice.)`);
+}
+function simDeviations(){
+  const d=SIM.d;if(!d||!S.plan)return;
+  const H=(k,ok,n)=>{SIM.dh=SIM.dh||{};SIM.dh[k]=ok?(SIM.dh[k]||0)+1:0;return SIM.dh[k]>=n;};
+  // taxi before a taxi clearance (pushback is slower than 10 kt)
+  if(H('taxi',['clr','gnd_out'].includes(S.phase)&&!S.f.taxi&&!S.f.tkoClr&&!(S.pending&&S.pending.key==='gnd')&&d.gs>=10,5)){deviation(S.phase==='clr'?'clr':'gnd','taxi');return;}
+  // takeoff roll / airborne without a takeoff clearance
+  if(H('tko',['clr','gnd_out','twr_out'].includes(S.phase)&&!S.f.tkoClr&&d.gs>=60,3)){
+    S.f.tkoClr=true;S.f.tko=true;S.phase='twr_out';S.cur='twr';
+    const st=facOf('twr').style;deviation('twr','tko',M('Fly runway heading, climb and maintain ',P_alt(initAlt(),TA('dep')),'.'));return;}
+  // on the ground at the arrival airport without a landing clearance
+  const b=simDist('arr');
+  if(H('land',['ctr','app','twr_in'].includes(S.phase)&&!S.f.landClr&&b!=null&&b<4&&d.gs<40,4)){
+    S.f.landClr=true;S.phase='twr_in';S.cur='atwr';deviation('atwr','land');return;}
+  // altitude: more than 300 ft past the altitude ATC gave you
+  const A=S.assigned;
+  if(A&&d.alt!=null&&['dep','ctr','app'].includes(S.phase)){
+    const over=(d.alt-A.ft)*A.dir;
+    if(H('alt1',over>300&&!A.warned,8)){A.warned=true;S.pending=null;atc(S.cur,M(P_cs(),', check altitude, maintain ',P_alt(A.ft,TA(sideOfKey(S.cur))),'.'));return;}
+    if(H('alt2',over>1000,5)){deviation(S.cur,'alt',M('Maintain ',P_alt(A.ft,TA(sideOfKey(S.cur))),'.'));A.dir=0;return;}
+  }
+}
+// Remember the last altitude ATC assigned, so the altitude check knows what to compare to.
+function noteAssigned(t){
+  const m=String(t).match(/(?:climb|descend)(?: and)? maintain (FL ?\d{3}|[\d,]{4,6})|(?:climb|descend) to (FL ?\d{3}|[\d,]{4,6})|\bmaintain (FL ?\d{3}|[\d,]{4,6})/i);
+  if(!m)return;const v=(m[1]||m[2]||m[3]).toUpperCase();
+  const ft=/^FL/.test(v)?+v.replace(/\D/g,'')*100:+v.replace(/,/g,'');
+  if(!ft||ft<500)return;
+  if(S.assigned&&S.assigned.ft===ft)return;   // same altitude repeated (e.g. "check altitude"): keep tracking it
+  const now=SIM.d&&SIM.d.alt!=null?SIM.d.alt:null;
+  S.assigned={ft,dir:now==null?1:(ft>=now?1:-1),warned:false};
+}
 function simRules(){
-  if(!SIM.ok||!SET.simAuto||!S.plan||S.pending||['idle','done'].includes(S.phase))return;
+  if(!SIM.ok||!S.plan||['idle','done'].includes(S.phase))return;
+  simDeviations();
+  if(!SET.simAuto||S.pending)return;
   const d=SIM.d;
   for(const [k,r] of Object.entries(SIM_RULES)){
     const e=EVENTS[k];if(!e)continue;
@@ -2382,7 +2513,7 @@ async function toReview(plan){
   $('sbStatus').textContent='Setting up controllers...';
   await buildFacilities(plan);
   $('sbStatus').textContent='';
-  renderReview();show('review');
+  renderReview();$('rvStartAt').value=SET.startAt||'gate';show('review');
   loadReviewWx(false);
   TAXI.dep=TAXI.arr=null;S.taxiQ=null;
   Promise.all([loadTaxi('dep'),loadTaxi('arr')]).then(renderTaxiReview);
@@ -2562,7 +2693,9 @@ function init(){
     $('log').innerHTML='';show('flight');startTraffic();
     RADIOS.L={act:'',sby:fnorm(facOf('clr').freq)};RADIOS.C={act:fnorm(facOf('datis').freq),sby:''};RADIOS.R={act:'121.500',sby:''};
     RADIO.sel='L';RADIO.mic='L';RADIO.rx={L:true,C:false,R:false};RADIO.off=false;RADIO.hf='';renderChart();setTimeout(fitPanels,0);
-    sys(`VHF C is set to ${facOf('datis').name}. Tap its window on the audio panel (REC) to hear the weather. VHF L has ${facOf('clr').name} ${fshow(facOf('clr').freq)} in standby: press the transfer key, then call for your clearance.`);
+    SET.startAt=$('rvStartAt').value;saveSet();
+    if(SET.startAt==='rwy'||SET.startAt==='final')quickStart(SET.startAt);
+    else sys(`VHF C is set to ${facOf('datis').name}. Tap its window on the audio panel (REC) to hear the weather. VHF L has ${facOf('clr').name} ${fshow(facOf('clr').freq)} in standby: press the transfer key, then call for your clearance.`);
     micNote();renderFlight();
   };
   // flight
@@ -2588,9 +2721,13 @@ function init(){
   $('rSwap').onclick=()=>{unlockAudio();swapRadio();};
   const tune=()=>{unlockAudio();const f=parseFreqInput($('rType').value);if(!f){$('rType').value='';$('rType').placeholder='Use 118.000 to 136.975';return;}$('rType').value='';setActive(f);};
   $('rTypeGo').onclick=tune;$('rType').onkeydown=e=>{if(e.key==='Enter')tune();};
-  const sendTxt=()=>{unlockAudio();const v=$('txt').value.trim();if(!v)return;$('txt').value='';pilotSay(v);};
+  const sendTxt=()=>{unlockAudio();const v=$('txt').value.trim();if(!v)return;$('txt').value='';pilotSay(v,{copilot:true});};
   $('txtSend').onclick=sendTxt;$('txt').onkeydown=e=>{if(e.key==='Enter')sendTxt();};
-  $('hintSend').onclick=()=>{unlockAudio();const h=hint();pilotSay(h.replace(/^Read back: /,''));};
+  $('hintSend').onclick=()=>{unlockAudio();const h=hint();pilotSay(h.replace(/^Read back: /,''),{copilot:true});};
+  $('copVoice').checked=!!SET.copilot;$('copVoice').onchange=e=>{SET.copilot=e.target.checked;saveSet();};
+  $('copAuto').checked=!!SET.copilotAuto;$('copAuto').onchange=e=>{SET.copilotAuto=e.target.checked;saveSet();if(SET.copilotAuto)copilotAutoCheck();};
+  $('autoTune').checked=!!SET.autoTune;$('autoTune').onchange=e=>{SET.autoTune=e.target.checked;saveSet();renderRadio();};
+  $('tuneBtn').onclick=()=>{unlockAudio();autoTune(true);};
   $('atisBtn').onclick=()=>{unlockAudio();playAtis();};$('atisBtn').title='Listen to ATIS on COM2 without changing COM1';
   $('sayAgainBtn').onclick=()=>{unlockAudio();if(S.last)atc(S.last.key,S.last.msg);};
   $('endBtn').onclick=()=>{clearTimers();S.phase='idle';speechFlush();show('setup');};
