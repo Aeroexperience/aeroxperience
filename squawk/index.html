@@ -110,7 +110,24 @@ a{color:var(--blue)}
 .prog span{flex:1;height:5px;border-radius:3px;background:var(--line)}
 .prog span.done{background:var(--green)}
 .prog span.now{background:var(--amber)}
-#log{display:flex;flex-direction:column;gap:8px;margin:8px 0 12px;min-height:120px}
+#log{display:flex;flex-direction:column;gap:8px;margin:4px 0 12px;min-height:120px;max-height:46vh;overflow-y:auto;overscroll-behavior:contain;padding-right:2px}
+.loghead{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.06em}
+.logbtns{display:flex;gap:4px}.logbtns button{font-size:12px;padding:3px 9px;width:auto;min-height:0;background:transparent;border:1px solid var(--line);color:var(--mute);border-radius:6px;text-transform:none;letter-spacing:0}
+.logbtns button.on{color:var(--text,#e6edf3);border-color:var(--blue)}
+#log>.msg{flex-shrink:0}
+#log.compact{gap:4px}
+#log.compact>.msg:not(.recent):not(.open){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:4px 10px;font-size:13px;cursor:pointer;max-width:100%}
+#log.compact>.msg:not(.recent):not(.open)>div{display:inline}
+#log.compact>.msg:not(.recent):not(.open) .lab{margin-right:6px}
+#log.compact>.msg:not(.recent):not(.open) .mark{margin-left:6px}
+#log>.msg.open,#log>.msg.recent{cursor:pointer}
+.grp .gbody{display:none;flex-direction:column;gap:4px;margin-top:4px}
+.grp.open .gbody,#log.full .grp .gbody{display:flex}
+#log.full .grp .gsum{display:none}
+.grp .gbody .msg{border:none;padding:0;background:none;max-width:100%;font-size:13px}
+.grp .gsum{color:#7d8f9e}
+#log.compact>.grp:not(.open)>.gbody{display:none!important}
+.grp .gbody .lab{display:inline;margin-right:6px}.grp .gbody .msg>div{display:inline}
 .msg{max-width:88%;padding:9px 12px;border-radius:12px;font-size:15px}
 .msg .lab{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--amber);margin-bottom:2px}
 .msg.atc{align-self:flex-start;background:var(--panel);border:1px solid var(--line)}
@@ -221,10 +238,16 @@ td input{padding:6px 8px}
       <div><label>&nbsp;</label>
         <label style="display:flex;gap:8px;align-items:center;margin:0"><input id="s_vatsim" type="checkbox" style="width:auto"> Include live VATSIM flights</label>
         <label style="display:flex;gap:8px;align-items:center;margin:4px 0 0"><input id="s_showtraffic" type="checkbox" style="width:auto"> Show other traffic in the log</label></div>
+      <div><label for="s_buzz">Radio sound</label>
+        <select id="s_buzz"><option value="light">Light (clearer)</option><option value="real">Real airband (buzzy)</option><option value="rough">Rough (busy frequency, weak signal)</option></select></div>
+      <div><label>Push-to-talk button</label>
+        <div style="display:flex;gap:6px"><button type="button" id="pttBind" style="flex:1">Spacebar</button><button type="button" id="pttReset" style="width:auto">Reset</button></div>
+        <div class="muted" id="pttBindNote" style="font-size:12px;margin-top:4px">Tap the button, then press a key, a foot pedal, or a button on a controller plugged into this device.</div></div>
       <div><label for="s_rate">Controller speed</label><input id="s_rate" type="range" min="0.8" max="1.35" step="0.05"></div>
       <div><label>&nbsp;</label>
         <label style="display:flex;gap:8px;align-items:center;margin:0"><input id="s_radio" type="checkbox" style="width:auto"> Radio static</label>
-        <label style="display:flex;gap:8px;align-items:center;margin:4px 0 0"><input id="s_ai" type="checkbox" style="width:auto"> Use Claude for unusual requests</label></div>
+        <label style="display:flex;gap:8px;align-items:center;margin:4px 0 0"><input id="s_ai" type="checkbox" style="width:auto"> Use Claude for unusual requests</label>
+        <label style="display:flex;gap:8px;align-items:center;margin:4px 0 0"><input id="s_gpu" type="checkbox" style="width:auto"> Use graphics card for Kokoro voices (faster, but can freeze some laptops)</label></div>
     </div>
     <details style="margin-top:8px"><summary>Azure voices (optional, most human)</summary>
       <p class="muted">Paste your Azure Speech key and region. They stay on this device only and never go into the code on GitHub. Free tier: 500,000 characters a month, roughly 100 flights.</p>
@@ -295,7 +318,8 @@ td input{padding:6px 8px}
     </div>
     <div class="prog" id="prog"></div>
   </div>
-  <div id="log"></div>
+  <div class="loghead"><span>Radio log</span><span class="logbtns"><button type="button" class="lv" data-lv="compact">Compact</button><button type="button" class="lv" data-lv="full">Full</button><button type="button" id="logClear">Clear</button></span></div>
+  <div id="log" class="compact"></div>
   <div class="hint" id="hint">
     <div class="lab">Suggested call</div>
     <div class="txt" id="hintTxt"></div>
@@ -623,7 +647,7 @@ function numEq(a,b){const lz=x=>x.replace(/^0+(?=\d)/,'');const d=x=>lz(x.replac
 function hasNum(set,v){for(const c of set)if(numEq(c,String(v)))return true;return false;}
 
 /* ================= state ================= */
-const DEF={traffic:'realistic',vatsim:true,showTraffic:true,engine:'auto',accent:'local',rate:1.0,strict:'strict',ai:true,radio:true,sbUser:''};
+const DEF={traffic:'realistic',vatsim:true,showTraffic:true,engine:'auto',accent:'local',rate:1.0,strict:'strict',ai:true,radio:true,buzz:'real',gpu:false,logView:'compact',pttKey:'Space',pttPad:null,sbUser:''};
 let SET=Object.assign({},DEF);
 try{Object.assign(SET,JSON.parse(localStorage.getItem('squawk.settings')||'{}'));}catch(e){}
 function saveSet(){try{localStorage.setItem('squawk.settings',JSON.stringify(SET));}catch(e){}}
@@ -678,21 +702,59 @@ function fromManual(v){
 function fakeFreq(seed,lo,hi){const steps=Math.floor((hi-lo)/0.025);return(lo+(hash(seed)%steps)*0.025).toFixed(3);}
 // Real frequencies from OurAirports, bundled next to this page (airports/freq/K.json, ...).
 const FREQ_CACHE={};
+// OurAirports drops the last digit on some channels (128.32 for 128.325). Put it back.
+function fixMHz(f){const t=Math.round(f*1000);return(t%10===0&&(t%100===20||t%100===70))?(t+5)/1000:f;}
+function getJson(url){const ctl=new AbortController();const tm=setTimeout(()=>ctl.abort(),8000);
+  return fetch(url,{signal:ctl.signal}).then(r=>r.ok?r.json():{}).catch(()=>({})).finally(()=>clearTimeout(tm));}
 async function realFreqs(icao){
   const ch=String(icao||'?')[0];
   try{
-    if(!FREQ_CACHE[ch]){const ctl=new AbortController();const tm=setTimeout(()=>ctl.abort(),8000);
-      FREQ_CACHE[ch]=fetch(`airports/freq/${ch}.json`,{signal:ctl.signal}).then(r=>r.ok?r.json():{}).catch(()=>({})).finally(()=>clearTimeout(tm));}
-    const d=await FREQ_CACHE[ch];return d[icao]||null;
+    if(!FREQ_CACHE[ch])FREQ_CACHE[ch]=getJson(`airports/freq/${ch}.json`);
+    const d=(await FREQ_CACHE[ch])[icao];if(!d)return null;
+    // US airports: FAA NASR data {f:[...], t: tower call, a: approach call, d: departure call}
+    if(!Array.isArray(d)){const l=d.f.map(x=>{const y=[...x];y.faa=true;return y;});l.meta={t:d.t,a:d.a,d:d.d,h:d.h};return l;}
+    return d.map(x=>[x[0],x[1],fixMHz(x[2])]);
   }catch(e){return null;}
 }
-// Pick the best entry: right type, COM band, and when an airport has several, the one for your runway.
+// FAA radio call (all caps) to how it is said: O HARE -> O'Hare, SOCAL -> SoCal
+function niceCall(c){if(!c)return '';const S={'O HARE':"O'Hare",SOCAL:'SoCal',NORCAL:'NorCal'};return S[c]||titleCase(c.toLowerCase());}
+// Departure frequency for your SID, or arrival frequency for your STAR, when the FAA lists one
+function pickProc(list,kind,proc,rwy,brgv){
+  if(!list||!proc)return null;const base=String(proc).toUpperCase().replace(/\d.*$/,'');if(base.length<3)return null;
+  let c=list.filter(x=>x[0]===kind&&x[2]>=118&&x[2]<137&&String(x[1]).toUpperCase().startsWith(base+' '));
+  if(!c.length)return null;
+  if(rwy){const sc=c.map(x=>rwyScore(x[1],rwy));const top=Math.max(0,...sc);c=top>0?c.filter((x,i)=>sc[i]===top):c.filter(x=>!/RWY/i.test(x[1]));if(!c.length)return null;}
+  if(brgv!=null&&c.length>1){const ok=c.filter(x=>{const s=sectorOf(x);return s&&s.b&&inArc(brgv,s.b);});if(ok.length)c=ok;}
+  return c[0];
+}
+// Sector: [from,to] bearing range and low/high altitude, from the entry or read from its description.
+function sectorOf(x){
+  if(x[3])return x[3];
+  const d=String(x[1]),m=d.match(/\b(\d{3})\s*°?\s*-\s*(\d{3})\s*°?/);if(!m)return null;
+  return{b:[+m[1],+m[2]],alt:/ABOVE/i.test(d)?'high':/BELOW|AND BLW/i.test(d)?'low':undefined};
+}
+function inArc(b,arc){if(!arc)return false;let [f,t]=arc;b=((b%360)+360)%360;if(t===360)t=359.999;return f<=t?b>=f&&b<=t:b>=f||b<=t;}
+// Runway match that knows 01L from 01R: 2 = exact, 1 = same number with no side given, 0 = no match.
+function rwyScore(desc,rwy){
+  const m=String(desc).toUpperCase().match(/(?:RWY|RWAY|RUNWAY|RY)S?\s*(.*)/);if(!m||!rwy)return 0;
+  const n=parseInt(rwy,10),side=(String(rwy).match(/[LRC]$/i)||[''])[0].toUpperCase();let best=0;
+  for(const r of m[1].matchAll(/\b0?(\d{1,2})([LRC]?)\b/g)){if(+r[1]!==n)continue;if(r[2]===side)return 2;if(!r[2]||!side)best=Math.max(best,1);}
+  return best;
+}
+// Pick the best entry: right type, COM band, your runway, and your sector (direction and altitude).
 function pickFreq(list,types,o={}){
   if(!list)return null;
   let c=list.filter(x=>types.includes(String(x[0]).toUpperCase())&&x[2]>=118&&x[2]<137);
   if(o.not)c=c.filter(x=>!o.not.test(x[1]));
+  // Class B/C airspace channels only when the airport lists no regular approach/departure channel
+  {const main=c.filter(x=>!/^(CLASS [BC]|TRSA)\b/.test(x[1]));if(main.length)c=main;}
   if(o.prefer){const p=c.filter(x=>o.prefer.test(x[1]));if(p.length)c=p;}
-  if(o.rwy){const n=parseInt(o.rwy,10);const p=c.filter(x=>{const m=String(x[1]).match(/(?:RWY|RWAY|RUNWAY|RY)\s*0?(\d{1,2})[LRC]?\s*[-\/]\s*0?(\d{1,2})/i)||String(x[1]).match(/(?:RWY|RWAY|RUNWAY|RY)\s*0?(\d{1,2})/i);return m&&(+m[1]===n||+m[2]===n);});if(p.length)c=p;}
+  if(o.rwy){const sc=c.map(x=>rwyScore(x[1],o.rwy));const top=Math.max(0,...sc);if(top>0)c=c.filter((x,i)=>sc[i]===top);}
+  if(o.brg!=null&&c.length>1){
+    const ok=c.filter(x=>{const s=sectorOf(x);return s&&inArc(o.brg,s.b)&&(!o.alt||!s.alt||s.alt===o.alt);});
+    if(ok.length)c=ok;
+    else{const any=c.filter(x=>{const s=sectorOf(x);return s&&inArc(o.brg,s.b);});if(any.length)c=any;else{const ns=c.filter(x=>!sectorOf(x));if(ns.length)c=ns;}}
+  }
   return c[0]||null;
 }
 // Facility names that aren't the city: SoCal Approach, Potomac, NorCal, Heathrow Director...
@@ -743,23 +805,28 @@ function assignVoices(){if(!S.fac)return;for(const f of Object.values(S.fac)){f.
 async function buildFacilities(p){
   const dr=regionFor(p.dep.icao),ar=regionFor(p.arr.icao);
   const [rd,ra]=await Promise.all([realFreqs(p.dep.icao),realFreqs(p.arr.icao)]);
-  const mk=(key,name,region,vIdx,entry,lo,hi)=>({key,name,region,style:region.style,vIdx,freq:fmtFreq(entry?entry[2].toFixed(3):fakeFreq(p.dep.icao+p.arr.icao+key,lo,hi)),est:!entry,src:entry?entry[1]:'',pitch:[1,.93,1.07,.97,1.04,.95,1.05,.98,1.02,1][vIdx%10]});
+  const mk=(key,name,region,vIdx,entry,lo,hi)=>({key,name,region,style:region.style,vIdx,freq:fmtFreq(entry?entry[2].toFixed(3):fakeFreq(p.dep.icao+p.arr.icao+key,lo,hi)),est:!entry,src:entry?entry[1]+(entry.faa?' (FAA)':''):'',pitch:[1,.93,1.07,.97,1.04,.95,1.05,.98,1.02,1][vIdx%10]});
   const dn=p.dep.call,an=p.arr.call;
   const fd=dr.style==='faa',fa=ar.style==='faa';
+  // Which way you leave and where you arrive from, for sectorized approach/departure frequencies
+  const has=a=>a&&a.lat!=null&&a.lon!=null&&!isNaN(a.lat)&&!isNaN(a.lon);
+  const rh=r=>{const n=parseInt(r,10);return n?n*10:null;};
+  const outB=has(p.dep)&&has(p.arr)?brg(p.dep,p.arr):rh(p.dep.rwy);
+  const inB=has(p.dep)&&has(p.arr)?brg(p.arr,p.dep):(rh(p.arr.rwy)!=null?(rh(p.arr.rwy)+180)%360:null);
   let c1=p.firs[0]&&FIRNAMES[p.firs[0]]?FIRNAMES[p.firs[0]]:centreFor(p.dep);
   let c2=p.firs.length>1&&FIRNAMES[p.firs[p.firs.length-1]]?FIRNAMES[p.firs[p.firs.length-1]]:centreFor(p.arr);
   const E={
     clr:pickFreq(rd,['CLD','DEL','CLNC','CD','PTD']),
-    gnd:pickFreq(rd,['GND'],{rwy:p.dep.rwy}),
+    gnd:pickFreq(rd,['GND'],{rwy:p.dep.rwy,prefer:/OUTBOUND/i,not:/INBOUND/i}),
     twr:pickFreq(rd,['TWR','TOWER'],{rwy:p.dep.rwy}),
-    dep:pickFreq(rd,['DEP','A/D','APP/DEP','APP','TCA','RDR'],{rwy:p.dep.rwy,prefer:/DEP|A\/D/}),
+    dep:pickProc(rd,'DP',p.sid,p.dep.rwy,outB)||pickFreq(rd,['DEP','A/D','APP/DEP','APP','TCA','RDR'],{rwy:p.dep.rwy,prefer:/DEP|A\/D/,brg:outB,alt:'low'}),
     ctr1:pickFreq(rd,['CNTR','ACC']),
     ctr2:pickFreq(ra,['CNTR','ACC']),
-    app:pickFreq(ra,['APP','A/D','APP/DEP','ARR','DIR','TCA','RDR'],{rwy:p.arr.rwy}),
+    app:pickProc(ra,'STAR',p.star,p.arr.rwy,inB)||pickFreq(ra,['APP','A/D','APP/DEP','ARR','DIR','TCA','RDR'],{rwy:p.arr.rwy,brg:inB,alt:'high',prefer:/\bIC\b/}),
     atwr:pickFreq(ra,['TWR','TOWER'],{rwy:p.arr.rwy}),
-    agnd:pickFreq(ra,['GND'],{rwy:p.arr.rwy}),
-    datis:pickFreq(rd,['ATIS','D-ATIS'],{prefer:/DEP/i,not:/ARR/i})||pickFreq(rd,['AWOS','ASOS']),
-    aatis:pickFreq(ra,['ATIS','D-ATIS'],{prefer:/ARR/i,not:/DEP/i})||pickFreq(ra,['AWOS','ASOS'])
+    agnd:pickFreq(ra,['GND'],{rwy:p.arr.rwy,prefer:/INBOUND/i,not:/OUTBOUND/i}),
+    datis:pickFreq(rd,['ATIS','D-ATIS'],{prefer:/DEP/i,not:/^(?!.*DEP).*ARR/i})||pickFreq(rd,['AWOS','ASOS']),
+    aatis:pickFreq(ra,['ATIS','D-ATIS'],{prefer:/ARR/i,not:/^(?!.*ARR).*DEP/i})||pickFreq(ra,['AWOS','ASOS'])
   };
   if(!E.clr&&rd&&rd.length&&fd)E.clr=null;
   if(E.ctr1&&/CENTER|CENTRE|CONTROL|RADAR|CNTR/i.test(E.ctr1[1]))c1=facNameFrom(E.ctr1,c1,'Center');
@@ -777,6 +844,12 @@ async function buildFacilities(p){
     datis:mk('datis',dn+(E.datis&&/AWOS|ASOS/.test(E.datis[0])?' '+E.datis[0]:' ATIS'),dr,9,E.datis,126.0,135.0),
     aatis:mk('aatis',an+(E.aatis&&/AWOS|ASOS/.test(E.aatis[0])?' '+E.aatis[0]:' ATIS'),ar,9,E.aatis,126.0,135.0)
   };
+  // US airports: use the FAA radio calls (Lindbergh Tower, SoCal Departure, O'Hare Ground)
+  const md=rd&&rd.meta,ma=ra&&ra.meta;
+  if(md&&fd){const t=niceCall(md.t);if(t){F.clr.name=t+' Clearance';F.gnd.name=t+' Ground';F.twr.name=t+' Tower';}
+    if(md.d&&E.dep)F.dep.name=niceCall(md.d)+' Departure';}
+  if(ma&&fa){const t=niceCall(ma.t);if(t){F.atwr.name=t+' Tower';F.agnd.name=t+' Ground';}
+    if(ma.a&&E.app)F.app.name=niceCall(ma.a)+' Approach';}
   // Small airports: no clearance delivery frequency means Ground gives the clearance.
   F.clr.noCD=!E.clr&&!!rd;
   if(F.clr.noCD){F.clr.name=F.gnd.name;F.clr.freq=F.gnd.freq;F.clr.est=F.gnd.est;F.clr.src=F.gnd.src;}
@@ -822,7 +895,7 @@ const KK_LIB='https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/+esm';
 const KK_MODEL='onnx-community/Kokoro-82M-v1.0-ONNX';
 const KOKORO={tts:null,loading:null,ready:false,broken:false,mode:''};
 // Best-rated voices first (see the Kokoro model card grades)
-const KK_US=['am_michael','af_heart','am_fenrir','af_bella','am_puck','af_nicole','am_echo','af_sarah'];
+const KK_US=['am_michael','af_heart','am_fenrir','af_bella','am_puck','am_echo','af_sarah'];
 const KK_UK=['bm_george','bf_emma','bm_fable','bf_isabella','bm_lewis','bm_daniel'];
 function kokoroVoiceFor(region,idx){
   const l=langsFor(region)[0]||'en-US';
@@ -830,14 +903,66 @@ function kokoroVoiceFor(region,idx){
   const list=us?KK_US:KK_UK;return list[idx%list.length];
 }
 function kokoroCached(){try{return localStorage.getItem('squawk.kokoro')==='1';}catch(e){return false;}}
-function kokoroBig(){return !!navigator.gpu&&!/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);}
+// The graphics card path is faster but has frozen some laptops, so it is off unless you turn it on.
+function kokoroBig(){return !!SET.gpu&&!!navigator.gpu&&!/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);}
+// Kokoro runs in a background worker so voice generation can never lock up the page.
+// If the browser won't start the worker, it falls back to running on the page.
+const KW={w:null,id:0,wait:new Map(),failed:false};
+function kokoroWorkerSrc(){return `import {KokoroTTS} from '${KK_LIB}';
+let tts=null;
+self.onmessage=async e=>{const m=e.data;
+  try{
+    if(m.type==='load'){
+      if(!tts){
+        const prog=p=>{try{self.postMessage({type:'prog',p:{status:p&&p.status,file:p&&p.file,loaded:p&&p.loaded,total:p&&p.total}});}catch(_){}};
+        if(m.gpu){try{tts=await KokoroTTS.from_pretrained('${KK_MODEL}',{dtype:'fp32',device:'webgpu',progress_callback:prog});self.postMessage({type:'mode',mode:'graphics card, full quality'});}catch(_){tts=null;}}
+        if(!tts){tts=await KokoroTTS.from_pretrained('${KK_MODEL}',{dtype:'q8',device:'wasm',progress_callback:prog});self.postMessage({type:'mode',mode:'standard'});}
+      }
+      self.postMessage({type:'ok',id:m.id});
+    }else if(m.type==='gen'){
+      const a=await tts.generate(m.text,{voice:m.voice,speed:m.speed});
+      const ab=await a.toBlob().arrayBuffer();
+      self.postMessage({type:'ok',id:m.id,ab},[ab]);
+    }
+  }catch(err){self.postMessage({type:'err',id:m.id,msg:String(err&&err.message||err)});}
+};`;}
+function kwCall(msg,timeout,onProg){
+  return new Promise((res,rej)=>{
+    const id=++KW.id;let tm=null;
+    if(timeout)tm=setTimeout(()=>{KW.wait.delete(id);rej(new Error('timeout'));kwKill('Voice took too long, restarting it.');},timeout);
+    KW.wait.set(id,{res:v=>{clearTimeout(tm);res(v);},rej:e=>{clearTimeout(tm);rej(e);},onProg});
+    KW.w.postMessage({...msg,id});
+  });
+}
+function kwKill(why){
+  if(KW.w){try{KW.w.terminate();}catch(e){}}
+  KW.w=null;for(const [,c] of KW.wait)c.rej(new Error(why||'stopped'));KW.wait.clear();
+  KOKORO.tts=null;KOKORO.loading=null;KOKORO.ready=false;
+}
+function kwStart(){
+  const url=URL.createObjectURL(new Blob([kokoroWorkerSrc()],{type:'text/javascript'}));
+  const w=new Worker(url,{type:'module'});KW.w=w;
+  w.onmessage=e=>{const m=e.data;
+    if(m.type==='prog'){for(const [,c] of KW.wait)if(c.onProg)c.onProg(m.p);return;}
+    if(m.type==='mode'){KOKORO.mode=m.mode;return;}
+    const c=KW.wait.get(m.id);if(!c)return;KW.wait.delete(m.id);
+    if(m.type==='ok')c.res(m.ab);else c.rej(new Error(m.msg));
+  };
+  w.onerror=e=>{e.preventDefault&&e.preventDefault();KW.failed=true;kwKill('worker error');};
+}
 async function kokoroLoad(onProg){
   if(KOKORO.tts)return KOKORO.tts;
   if(!KOKORO.loading)KOKORO.loading=(async()=>{
-    const {KokoroTTS}=await import(KK_LIB);
     let tts=null;
-    if(kokoroBig()){try{tts=await KokoroTTS.from_pretrained(KK_MODEL,{dtype:'fp32',device:'webgpu',progress_callback:onProg});KOKORO.mode='WebGPU, full quality';}catch(e){tts=null;}}
-    if(!tts){tts=await KokoroTTS.from_pretrained(KK_MODEL,{dtype:'q8',device:'wasm',progress_callback:onProg});KOKORO.mode='standard';}
+    if(!KW.failed&&typeof Worker!=='undefined'){
+      try{kwStart();await kwCall({type:'load',gpu:kokoroBig()},0,onProg);tts={worker:true};}
+      catch(e){KW.failed=true;kwKill();tts=null;}
+    }
+    if(!tts){
+      const {KokoroTTS}=await import(KK_LIB);
+      if(kokoroBig()){try{tts=await KokoroTTS.from_pretrained(KK_MODEL,{dtype:'fp32',device:'webgpu',progress_callback:onProg});KOKORO.mode='graphics card, full quality';}catch(e){tts=null;}}
+      if(!tts){tts=await KokoroTTS.from_pretrained(KK_MODEL,{dtype:'q8',device:'wasm',progress_callback:onProg});KOKORO.mode='standard';}
+    }
     KOKORO.tts=tts;KOKORO.ready=true;KOKORO.broken=false;try{localStorage.setItem('squawk.kokoro','1');}catch(e){}
     return tts;
   })();
@@ -845,8 +970,21 @@ async function kokoroLoad(onProg){
 }
 let KGEN=Promise.resolve();
 function kokoroSynth(text,voice){
-  const p=KGEN.then(async()=>{const tts=await kokoroLoad();const a=await tts.generate(text,{voice,speed:Math.min(1.35,SET.rate*1.08)});return a.toBlob();});
+  const speed=Math.min(1.35,SET.rate*1.08);
+  const p=KGEN.then(async()=>{
+    const tts=await kokoroLoad();
+    if(tts.worker){const ab=await kwCall({type:'gen',text,voice,speed},25000);return new Blob([ab],{type:'audio/wav'});}
+    const a=await tts.generate(text,{voice,speed});return a.toBlob();
+  });
   KGEN=p.catch(()=>{});return p;
+}
+// Split long transmissions (ATIS) into sentence-sized pieces so the voice model never gets a huge block at once.
+function speechChunks(text,max=200){
+  const parts=String(text).split(/(?<=[.!?])\s+/);const out=[];let cur='';
+  for(const s0 of parts){let s=s0;
+    while(s.length>max){const cut=s.lastIndexOf(', ',max);const i=cut>40?cut+1:max;if(cur){out.push(cur);cur='';}out.push(s.slice(0,i).trim());s=s.slice(i).trim();}
+    if(cur&&(cur+' '+s).length>max){out.push(cur);cur=s;}else cur=cur?cur+' '+s:s;}
+  if(cur)out.push(cur);return out.filter(Boolean);
 }
 
 const AZ_VOICE={'en-US':['en-US-GuyNeural','en-US-DavisNeural','en-US-AndrewMultilingualNeural','en-US-BrianMultilingualNeural'],'en-GB':['en-GB-RyanNeural','en-GB-ThomasNeural'],'en-IE':['en-IE-ConnorNeural'],'en-IN':['en-IN-PrabhatNeural'],'en-AU':['en-AU-WilliamNeural'],'en-NZ':['en-NZ-MitchellNeural'],'en-ZA':['en-ZA-LukeNeural'],'en-SG':['en-SG-WayneNeural'],'en-CA':['en-CA-LiamNeural'],'en-PH':['en-PH-JamesNeural'],'en-KE':['en-KE-ChilembaNeural'],'en-NG':['en-NG-AbeoNeural'],'en-HK':['en-HK-SamNeural'],fr:['fr-FR-RemyMultilingualNeural','fr-FR-LucienMultilingualNeural','fr-FR-VivienneMultilingualNeural'],de:['de-DE-FlorianMultilingualNeural','de-DE-SeraphinaMultilingualNeural']};
@@ -873,7 +1011,15 @@ async function azSynth(text,voice){
 }
 // Plays generated audio through the radio filter. Pitch differs a little per controller.
 let RADIO_CURVE=null;
-function radioCurve(){if(RADIO_CURVE)return RADIO_CURVE;const n=1024,c=new Float32Array(n);for(let i=0;i<n;i++){const x=i*2/n-1;c[i]=Math.tanh(2.2*x)/Math.tanh(2.2);}return RADIO_CURVE=c;}
+// Radio sound presets. 'real' is the default: narrow, driven hard, a little crackle.
+const BUZZ={
+  light:{hp:350,lp:2900,pk:4,pkf:1700,k:2.2,asym:0,drive:1,hiss:0.018,crackle:0,out:1.6},
+  real:{hp:480,lp:2500,pk:7,pkf:1500,k:4.5,asym:0.18,drive:1.8,hiss:0.03,crackle:0.22,out:1.35},
+  rough:{hp:600,lp:2200,pk:9,pkf:1400,k:7,asym:0.3,drive:2.6,hiss:0.05,crackle:0.4,out:1.2}
+};
+// Clipping curve. The small offset (asym) adds even harmonics, which is the buzz you hear on airband audio.
+function radioCurve(k,asym){const key=k+'/'+asym;RADIO_CURVE=RADIO_CURVE||{};if(RADIO_CURVE[key])return RADIO_CURVE[key];
+  const n=2048,c=new Float32Array(n),off=Math.tanh(k*asym);for(let i=0;i<n;i++){const x=i*2/n-1;c[i]=(Math.tanh(k*(x+asym))-off)/Math.tanh(k);}return RADIO_CURVE[key]=c;}
 async function playAudio(blob,f,fixedRate){
   unlockAudio();if(!actx)throw new Error('no audio');
   const buf=await actx.decodeAudioData(await blob.arrayBuffer());
@@ -883,16 +1029,33 @@ async function playAudio(blob,f,fixedRate){
     src.playbackRate.value=(fixedRate?1+((f.pitch||1)-1)*0.5:(f.pitch||1)*SET.rate);
     let out=src,hiss=null;
     if(SET.radio){
-      // VHF airband sound: narrow band, a little drive, heavy compression, faint carrier hiss
-      const hp=actx.createBiquadFilter();hp.type='highpass';hp.frequency.value=350;
-      const lp=actx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2900;
-      const pk=actx.createBiquadFilter();pk.type='peaking';pk.frequency.value=1700;pk.Q.value=0.9;pk.gain.value=4;
-      const ws=actx.createWaveShaper();ws.curve=radioCurve();
-      const cp=actx.createDynamicsCompressor();cp.threshold.value=-26;cp.ratio.value=8;cp.attack.value=0.003;cp.release.value=0.12;
-      const g=actx.createGain();g.gain.value=1.6;
-      src.connect(hp);hp.connect(lp);lp.connect(pk);pk.connect(ws);ws.connect(cp);cp.connect(g);out=g;
-      const nb=actx.createBuffer(1,actx.sampleRate*2,actx.sampleRate);const d=nb.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
-      hiss=actx.createBufferSource();hiss.buffer=nb;hiss.loop=true;const hb=actx.createBiquadFilter();hb.type='bandpass';hb.frequency.value=2200;hb.Q.value=0.6;const hg=actx.createGain();hg.gain.value=0.018;
+      // VHF airband sound: narrow band, driven into clipping, compressed, with carrier hiss and crackle
+      const P=BUZZ[SET.buzz]||BUZZ.real;
+      const bq=(type,f,q,gain)=>{const x=actx.createBiquadFilter();x.type=type;x.frequency.value=f;if(q!=null)x.Q.value=q;if(gain!=null)x.gain.value=gain;return x;};
+      // two filters on each side make the cutoff steep, like a cheap radio speaker
+      const hp1=bq('highpass',P.hp,0.7),hp2=bq('highpass',P.hp,0.7);
+      const lp1=bq('lowpass',P.lp,0.7),lp2=bq('lowpass',P.lp,0.7);
+      const pk=bq('peaking',P.pkf,1.1,P.pk);
+      const pre=actx.createGain();pre.gain.value=P.drive;
+      const ws=actx.createWaveShaper();ws.curve=radioCurve(P.k,P.asym);ws.oversample='2x';
+      // clipping makes new high harmonics, so band-limit again after it
+      const lp3=bq('lowpass',P.lp+300,0.7),hp3=bq('highpass',P.hp-100,0.7);
+      const cp=actx.createDynamicsCompressor();cp.threshold.value=-28;cp.knee.value=6;cp.ratio.value=10;cp.attack.value=0.002;cp.release.value=0.1;
+      const g=actx.createGain();g.gain.value=P.out;
+      src.connect(hp1);hp1.connect(hp2);hp2.connect(lp1);lp1.connect(lp2);lp2.connect(pk);pk.connect(pre);pre.connect(ws);ws.connect(lp3);lp3.connect(hp3);hp3.connect(cp);out=cp;
+      // crackle: the voice level flutters a little, like a signal that isn't perfectly steady
+      if(P.crackle){
+        const flut=actx.createGain();flut.gain.value=1;
+        const lb=actx.createBuffer(1,actx.sampleRate*3,actx.sampleRate);const ld=lb.getChannelData(0);
+        let v=0;for(let i=0;i<ld.length;i++){v+=(Math.random()*2-1)*0.02;v*=0.995;ld[i]=v;if(Math.random()<0.00004)ld[i]-=0.6;}
+        const lfo=actx.createBufferSource();lfo.buffer=lb;lfo.loop=true;const lg=actx.createGain();lg.gain.value=P.crackle;
+        lfo.connect(lg);lg.connect(flut.gain);cp.connect(flut);out=flut;lfo.start();
+        src.addEventListener('ended',()=>{try{lfo.stop();}catch(e){}});
+      }
+      out.connect(g);out=g;
+      const nb=actx.createBuffer(1,actx.sampleRate*2,actx.sampleRate);const d=nb.getChannelData(0);
+      for(let i=0;i<d.length;i++){d[i]=Math.random()*2-1;if(P.crackle&&Math.random()<0.0006)d[i]*=6;}
+      hiss=actx.createBufferSource();hiss.buffer=nb;hiss.loop=true;const hb=bq('bandpass',2000,0.5);const hg=actx.createGain();hg.gain.value=P.hiss;
       hiss.connect(hb);hb.connect(hg);hg.connect(actx.destination);hiss.start();
     }
     out.connect(actx.destination);TX.src=src;src.onended=()=>{if(hiss){try{hiss.stop();}catch(e){}}if(TX.src===src)TX.src=null;res();};radioClick();src.start();
@@ -972,7 +1135,7 @@ function parseFreqInput(s){
   if(isNaN(n)||n<118||n>136.99)return null;return n.toFixed(3);
 }
 function setActive(f,fromSwap){
-  const prev=RADIO.act;RADIO.act=fnorm(f);if(!fromSwap&&prev)RADIO.sby=prev;
+  const prev=RADIO.act;if(fnorm(f)!==fnorm(prev))speechFlush();RADIO.act=fnorm(f);if(!fromSwap&&prev)RADIO.sby=prev;
   renderRadio();
   if(RADIO.rx[RADIO.sel]||RADIO.sel===RADIO.mic)atisCheck(RADIO.act);
 }
@@ -1395,14 +1558,40 @@ function chatterFor(k){
   }
   return null;
 }
-function enqueueSpeech(f,text){TX.n++;const prep=HEADLESS?null:prepareAudio(f,text);speakQ=speakQ.then(()=>HEADLESS?null:playPrepared(f,text,prep)).catch(()=>{}).then(()=>{TX.n--;TX.last=Date.now();});return speakQ;}
+// Speech queue. Only the line playing now and the next one get voice audio made, so a burst of
+// traffic can't pile up work. Push to talk and frequency changes cancel everything waiting.
+const SQ=[];
+function speechFlush(){
+  TX.gen=(TX.gen||0)+1;SQ.length=0;
+  if(TX.src){try{TX.src.stop();}catch(e){}}
+  if(typeof speechSynthesis!=='undefined'){try{speechSynthesis.cancel();}catch(e){}}
+}
+function enqueueSpeech(f,text){
+  if(HEADLESS){TX.n++;TX.n--;TX.last=Date.now();return speakQ;}
+  const eng=engineFor(f);
+  const pieces=(eng==='kokoro'||eng==='piper')?speechChunks(text):[text];
+  let last=speakQ;
+  for(const piece of pieces){
+    TX.n++;const job={f,text:piece,gen:TX.gen||0,prep:null};SQ.push(job);
+    speakQ=speakQ.then(async()=>{
+      if(job.gen!==(TX.gen||0))return;
+      if(!job.prep)job.prep=prepareAudio(f,piece);
+      const nx=SQ[SQ.indexOf(job)+1];if(nx&&!nx.prep&&nx.gen===job.gen)nx.prep=prepareAudio(nx.f,nx.text);
+      let a=null;try{a=await job.prep;}catch(e){}
+      if(job.gen!==(TX.gen||0))return;
+      await playPrepared(f,piece,a);
+    }).catch(()=>{}).then(()=>{const i=SQ.indexOf(job);if(i>=0)SQ.splice(i,1);TX.n--;TX.last=Date.now();});
+    last=speakQ;
+  }
+  return last;
+}
 function playChatter(k,ex){
   const fac=facOf(k);
   for(const ln of ex.lines){
     const m=ln.m&&ln.m.t!=null?ln.m:M(ln.m);
     if(ln.who==='atc'){ui.other(fac.name,m.t,true);enqueueSpeech(fac,m.s);}
     else{const po=pilotObj(ln.f);ui.other(ln.f.info.t+(ln.f.live?' (VATSIM)':''),m.t,false);enqueueSpeech(po,m.s);}
-    speakQ=speakQ.then(()=>new Promise(r=>setTimeout(r,250+Math.random()*500)));
+    {const g=TX.gen||0;speakQ=speakQ.then(()=>g===(TX.gen||0)?new Promise(r=>setTimeout(r,250+Math.random()*500)):null);}
   }
 }
 function trafficTick(){
@@ -1875,7 +2064,39 @@ const ui={
     renderFlight();
   }
 };
-function addMsg(cls,lab,text){const d=document.createElement('div');d.className='msg '+cls;if(lab){const l=document.createElement('div');l.className='lab';l.textContent=lab;d.appendChild(l);}const t=document.createElement('div');t.textContent=text;d.appendChild(t);$('log').appendChild(d);d.scrollIntoView({block:'nearest',behavior:'smooth'});}
+function addMsg(cls,lab,text){
+  const log=$('log');const stick=log.scrollHeight-log.scrollTop-log.clientHeight<80;
+  const d=document.createElement('div');d.className='msg '+cls;
+  if(lab){const l=document.createElement('div');l.className='lab';l.textContent=lab;d.appendChild(l);}
+  const t=document.createElement('div');t.textContent=text;d.appendChild(t);
+  if(/\bother\b/.test(cls)){
+    // back-to-back calls between other planes and ATC fold into one row
+    let g=log.lastElementChild;
+    if(!g||!g.classList.contains('grp')){
+      g=document.createElement('div');g.className='msg other grp';g.dataset.n='0';
+      const sm=document.createElement('div');sm.className='gsum';const b=document.createElement('div');b.className='gbody';
+      g.appendChild(sm);g.appendChild(b);log.appendChild(g);
+    }
+    g.querySelector('.gbody').appendChild(d);
+    const n=+g.dataset.n+1;g.dataset.n=String(n);
+    g.querySelector('.gsum').textContent=`Other traffic (${n} call${n>1?'s':''}): ${lab?lab+': ':''}${text}`;
+  }else log.appendChild(d);
+  // keep the newest two calls to and from you in full
+  const main=[...log.children].filter(e=>e.classList.contains('atc')||e.classList.contains('pilot'));
+  main.forEach((e,i)=>e.classList.toggle('recent',i>=main.length-2));
+  // don't let the page get heavy on long flights
+  while(log.children.length>300)log.removeChild(log.firstElementChild);
+  if(stick)log.scrollTop=log.scrollHeight;
+}
+function setLogView(v){SET.logView=v;const log=$('log');log.classList.toggle('compact',v!=='full');log.classList.toggle('full',v==='full');
+  for(const b of document.querySelectorAll('.logbtns .lv'))b.classList.toggle('on',b.dataset.lv===(v==='full'?'full':'compact'));}
+function initLog(){
+  if(HEADLESS)return;const log=$('log');
+  log.addEventListener('click',e=>{const m=e.target.closest('#log>.msg');if(!m||!log.classList.contains('compact'))return;m.classList.toggle('open');});
+  for(const b of document.querySelectorAll('.logbtns .lv'))b.onclick=()=>{setLogView(b.dataset.lv);saveSet();};
+  $('logClear').onclick=()=>{log.innerHTML='';};
+  setLogView(SET.logView||'compact');
+}
 function show(id){for(const s of ['setup','review','flight'])$(s).classList.toggle('hidden',s!==id);W.scrollTo&&W.scrollTo(0,0);}
 function lcdText(f){const n=parseFloat(f);return isNaN(n)?'':n.toFixed(3);}
 function renderRadio(){
@@ -1933,13 +2154,12 @@ function setupDict(){
   d.onState(({state})=>{if(state==='idle'&&MIC.on){MIC.on=false;const h=MIC.heard;MIC.heard='';$('partial').textContent='';if(h)pilotSay(h);renderFlight();}});
   micNote();
 }
-function micNote(){if(HEADLESS)return;$('micNote').textContent=micAvailable()?'Hold the button (or the spacebar on a keyboard) while you talk, and let go to send. Just like the push-to-talk switch on a yoke.':'Voice input isn\'t available in this browser. Type your call or tap "Send this call". For voice, open this page in Chrome.';}
+function micNote(){if(HEADLESS)return;$('micNote').textContent=micAvailable()?'Hold the button (or '+(SET.pttPad?'your '+bindLabel().replace(/^C/,'c'):'the '+bindLabel()+' key')+') while you talk, and let go to send. Just like the push-to-talk switch on a yoke.':'Voice input isn\'t available in this browser. Type your call or tap "Send this call". For voice, open this page in Chrome.';}
 // Push to talk: hold the button (or spacebar) to transmit, release to send.
 function pttDown(){
   if(MIC.on)return;
   unlockAudio();radioClick();
-  if(typeof speechSynthesis!=='undefined')speechSynthesis.cancel();
-  if(TX.src){try{TX.src.stop();}catch(e){}}
+  speechFlush();
   MIC.heard='';MIC.tmp='';MIC.held=true;MIC.at=Date.now();
   if(CAP.dict){
     CAP.dict.start().then(()=>{if(!MIC.held)CAP.dict.stop().catch(()=>{});}).catch(e=>{MIC.on=false;renderFlight();if(e&&e.code==='not_granted'){MIC.blocked=true;micNote();}});
@@ -1965,6 +2185,45 @@ function pttUp(){
     if(CAP.dict){CAP.dict.stop().catch(()=>{});}
     else if(MIC.rec){try{MIC.rec.stop();}catch(e){}}
   },Math.max(wait,250));
+}
+// Custom push-to-talk: any keyboard key (foot pedals and page turners act like keys) or a button
+// on a game controller connected to this phone or computer (read with the browser's Gamepad API).
+const BIND={on:false,pad:{down:false,raf:0,base:null}};
+function keyName(code){if(!code)return '';const m={Space:'Spacebar',ArrowUp:'Up arrow',ArrowDown:'Down arrow',ArrowLeft:'Left arrow',ArrowRight:'Right arrow',PageUp:'Page Up',PageDown:'Page Down',Enter:'Enter',ShiftLeft:'Left Shift',ShiftRight:'Right Shift',ControlLeft:'Left Control',ControlRight:'Right Control',AltLeft:'Left Option/Alt',AltRight:'Right Option/Alt',CapsLock:'Caps Lock',Backquote:'` key',Tab:'Tab'};
+  return m[code]||code.replace(/^Key/,'').replace(/^Digit/,'').replace(/^Numpad/,'Keypad ');}
+function bindLabel(){if(SET.pttPad)return `Controller button ${SET.pttPad.b+1}`+(SET.pttPad.name?` (${SET.pttPad.name.slice(0,24)})`:'');return keyName(SET.pttKey||'Space');}
+function renderBind(){if(HEADLESS)return;const b=$('pttBind');if(!b)return;b.textContent=BIND.on?'Press a key or controller button...':bindLabel();
+  micNote();}
+function finishBind(x){
+  BIND.on=false;
+  if(x.key){if(x.key==='Escape'){renderBind();return;}SET.pttKey=x.key;SET.pttPad=null;}
+  else if(x.pad){SET.pttPad=x.pad;SET.pttKey='Space';}
+  saveSet();renderBind();padLoop();
+}
+function padsNow(){try{return [...(navigator.getGamepads?navigator.getGamepads():[])].filter(Boolean);}catch(e){return [];}}
+function padLoop(){
+  if(HEADLESS)return;cancelAnimationFrame(BIND.pad.raf);
+  const tick=()=>{
+    const pads=padsNow();
+    if(BIND.on){
+      // binding: first button that goes down (ignore ones already held when binding started)
+      for(const g of pads)g.buttons.forEach((bt,i)=>{const k=g.index+':'+i;if(bt.pressed&&!(BIND.pad.base&&BIND.pad.base.has(k)))finishBind({pad:{b:i,name:g.id}});});
+    }else if(SET.pttPad&&!$('flight').classList.contains('hidden')){
+      const g=pads.find(x=>x.id===SET.pttPad.name)||pads[0];
+      const down=!!(g&&g.buttons[SET.pttPad.b]&&g.buttons[SET.pttPad.b].pressed);
+      if(down&&!BIND.pad.down){BIND.pad.down=true;if(!typing())pttDown();}
+      else if(!down&&BIND.pad.down){BIND.pad.down=false;pttUp();}
+    }
+    if(BIND.on||SET.pttPad)BIND.pad.raf=requestAnimationFrame(tick);
+  };
+  if(BIND.on||(SET.pttPad&&padsNow().length))BIND.pad.raf=requestAnimationFrame(tick);
+}
+function initPttBind(){
+  if(HEADLESS)return;
+  $('pttBind').onclick=()=>{BIND.on=true;const base=new Set();for(const g of padsNow())g.buttons.forEach((b,i)=>{if(b.pressed)base.add(g.index+':'+i);});BIND.pad.base=base;renderBind();padLoop();};
+  $('pttReset').onclick=()=>{BIND.on=false;SET.pttKey='Space';SET.pttPad=null;saveSet();renderBind();};
+  W.addEventListener('gamepadconnected',padLoop);
+  renderBind();
 }
 function typing(){const a=document.activeElement;return a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.tagName==='SELECT'||a.isContentEditable);}
 
@@ -2104,13 +2363,16 @@ function init(){
   $('s_vatsim').checked=SET.vatsim;$('s_vatsim').onchange=e=>{SET.vatsim=e.target.checked;saveSet();};
   $('s_showtraffic').checked=SET.showTraffic;$('s_showtraffic').onchange=e=>{SET.showTraffic=e.target.checked;saveSet();};
   $('s_engine').value=SET.engine;$('s_engine').onchange=e=>{SET.engine=e.target.value;saveSet();voicesNote();};
-  $('s_accent').value=SET.accent;$('s_strict').value=SET.strict;$('s_rate').value=SET.rate;$('s_radio').checked=SET.radio;$('s_ai').checked=SET.ai;$('sbUser').value=SET.sbUser||'';
+  $('s_accent').value=SET.accent;$('s_strict').value=SET.strict;$('s_rate').value=SET.rate;$('s_radio').checked=SET.radio;$('s_buzz').value=SET.buzz||'real';$('s_gpu').checked=!!SET.gpu;$('s_ai').checked=SET.ai;$('sbUser').value=SET.sbUser||'';
   $('s_accent').onchange=e=>{SET.accent=e.target.value;saveSet();assignVoices();voicesNote();};
   $('s_strict').onchange=e=>{SET.strict=e.target.value;saveSet();};
   $('s_rate').oninput=e=>{SET.rate=+e.target.value;saveSet();};
   $('s_radio').onchange=e=>{SET.radio=e.target.checked;saveSet();};
+  $('s_buzz').onchange=e=>{SET.buzz=e.target.value;saveSet();};
+  $('s_gpu').onchange=e=>{SET.gpu=e.target.checked;saveSet();kwKill('setting changed');KW.failed=false;if(kokoroCached())kokoroLoad().catch(()=>{});};
   $('s_ai').onchange=e=>{SET.ai=e.target.checked;saveSet();};
   // voices
+  initLog();
   if(typeof speechSynthesis!=='undefined'){loadVoices();speechSynthesis.onvoiceschanged=()=>{loadVoices();assignVoices();voicesNote();};}
   // simbrief
   $('sbLoad').onclick=async()=>{
@@ -2160,15 +2422,17 @@ function init(){
   ptt.addEventListener('pointerdown',e=>{e.preventDefault();try{ptt.setPointerCapture(e.pointerId);}catch(_){}pttDown();});
   for(const ev of ['pointerup','pointercancel','lostpointercapture'])ptt.addEventListener(ev,()=>pttUp());
   ptt.addEventListener('contextmenu',e=>e.preventDefault());
-  document.addEventListener('keydown',e=>{if(e.code!=='Space'||typing()||$('flight').classList.contains('hidden'))return;e.preventDefault();if(!e.repeat)pttDown();});
-  document.addEventListener('keyup',e=>{if(e.code!=='Space'||$('flight').classList.contains('hidden'))return;e.preventDefault();pttUp();});
+  document.addEventListener('keydown',e=>{if(BIND.on){e.preventDefault();finishBind({key:e.code});return;}
+    if(e.code!==(SET.pttKey||'Space')||typing()||$('flight').classList.contains('hidden'))return;e.preventDefault();if(!e.repeat)pttDown();});
+  document.addEventListener('keyup',e=>{if(e.code!==(SET.pttKey||'Space')||$('flight').classList.contains('hidden'))return;e.preventDefault();pttUp();});
+  initPttBind();
   window.addEventListener('blur',()=>pttUp());
   wireKnob($('kOuter'),'outer');wireKnob($('kInner'),'inner');
   window.addEventListener('resize',fitPanels);fitPanels();
   for(const el of document.querySelectorAll('#rtp [data-rad]'))el.onclick=()=>{unlockAudio();radioClick();const r=el.dataset.rad;
     if(RADIOS[r]){RADIO.hf='';RADIO.sel=r;}else{RADIO.hf=r;sys(r==='AM'?'AM is not used for ATC here.':'HF radios are for oceanic flights. Not modeled yet.');}renderRadio();};
   $('pnlOff').onclick=()=>{radioClick();RADIO.off=!RADIO.off;renderRadio();};
-  for(const b of document.querySelectorAll('#acp [data-mic]'))b.onclick=()=>{unlockAudio();radioClick();RADIO.mic=b.dataset.mic;RADIO.rx[RADIO.mic]=true;renderRadio();};
+  for(const b of document.querySelectorAll('#acp [data-mic]'))b.onclick=()=>{unlockAudio();radioClick();if(RADIO.mic!==b.dataset.mic)speechFlush();RADIO.mic=b.dataset.mic;RADIO.rx[RADIO.mic]=true;renderRadio();};
   for(const ch of document.querySelectorAll('#acp .acpch .win'))ch.onclick=()=>{unlockAudio();radioClick();const r=ch.parentElement.dataset.ch;if(r===RADIO.mic)return;RADIO.rx[r]=!RADIO.rx[r];renderRadio();if(RADIO.rx[r])atisCheck(RADIOS[r].act);};
   $('rSwap').onclick=()=>{unlockAudio();swapRadio();};
   const tune=()=>{unlockAudio();const f=parseFreqInput($('rType').value);if(!f){$('rType').value='';$('rType').placeholder='Use 118.000 to 136.975';return;}$('rType').value='';setActive(f);};
@@ -2178,7 +2442,7 @@ function init(){
   $('hintSend').onclick=()=>{unlockAudio();const h=hint();pilotSay(h.replace(/^Read back: /,''));};
   $('atisBtn').onclick=()=>{unlockAudio();playAtis();};$('atisBtn').title='Listen to ATIS on COM2 without changing COM1';
   $('sayAgainBtn').onclick=()=>{unlockAudio();if(S.last)atc(S.last.key,S.last.msg);};
-  $('endBtn').onclick=()=>{clearTimers();S.phase='idle';if(TX.src){try{TX.src.stop();}catch(e){}}if(typeof speechSynthesis!=='undefined')speechSynthesis.cancel();show('setup');};
+  $('endBtn').onclick=()=>{clearTimers();S.phase='idle';speechFlush();show('setup');};
   if(kokoroCached()&&(SET.engine==='auto'||SET.engine==='kokoro')&&!/claude/.test(location.hostname))kokoroLoad().then(()=>{renderKokoro();voicesNote();}).catch(()=>{});
   // Claude page capabilities (only exist when this page is opened as a Claude artifact)
   if(W.claude&&typeof W.claude.use==='function'){
