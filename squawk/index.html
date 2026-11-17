@@ -993,9 +993,12 @@ async function kokoroLoad(onProg){
   })();
   try{return await KOKORO.loading;}catch(e){KOKORO.loading=null;KOKORO.broken=true;throw e;}
 }
+// ATIS stations read about 30% faster than controllers, like real recordings.
+function isAtis(f){return !!f&&(f.key==='datis'||f.key==='aatis');}
+function rateFor(f){return SET.rate*(isAtis(f)?1.3:1);}
 let KGEN=Promise.resolve();
-function kokoroSynth(text,voice){
-  const speed=Math.min(1.35,SET.rate*1.08);
+function kokoroSynth(text,voice,f){
+  const speed=Math.min(isAtis(f)?1.7:1.35,rateFor(f)*1.08);
   const p=KGEN.then(async()=>{
     const tts=await kokoroLoad();
     if(tts.worker){const ab=await kwCall({type:'gen',text,voice,speed},25000);return new Blob([ab],{type:'audio/wav'});}
@@ -1004,15 +1007,12 @@ function kokoroSynth(text,voice){
   KGEN=p.catch(()=>{});return p;
 }
 // Split long transmissions (ATIS) into sentence-sized pieces so the voice model never gets a huge block at once.
-function speechChunks(text,max=200){
+function speechChunks(text,max=320){
   const parts=String(text).split(/(?<=[.!?])\s+/);const out=[];let cur='';
   for(const s0 of parts){let s=s0;
     while(s.length>max){const cut=s.lastIndexOf(', ',max);const i=cut>40?cut+1:max;if(cur){out.push(cur);cur='';}out.push(s.slice(0,i).trim());s=s.slice(i).trim();}
     if(cur&&(cur+' '+s).length>max){out.push(cur);cur=s;}else cur=cur?cur+' '+s:s;}
-  if(cur)out.push(cur);
-  // Short first piece (up to the first comma) so the voice starts quickly; the rest is made while it plays.
-  if(out.length&&out[0].length>70){const c=out[0].indexOf(', ',20);if(c>0&&c<70){out.splice(0,1,out[0].slice(0,c+1).trim(),out[0].slice(c+1).trim());}}
-  return out.filter(Boolean);
+  if(cur)out.push(cur);return out.filter(Boolean);
 }
 
 const AZ_VOICE={'en-US':['en-US-GuyNeural','en-US-DavisNeural','en-US-AndrewMultilingualNeural','en-US-BrianMultilingualNeural'],'en-GB':['en-GB-RyanNeural','en-GB-ThomasNeural'],'en-IE':['en-IE-ConnorNeural'],'en-IN':['en-IN-PrabhatNeural'],'en-AU':['en-AU-WilliamNeural'],'en-NZ':['en-NZ-MitchellNeural'],'en-ZA':['en-ZA-LukeNeural'],'en-SG':['en-SG-WayneNeural'],'en-CA':['en-CA-LiamNeural'],'en-PH':['en-PH-JamesNeural'],'en-KE':['en-KE-ChilembaNeural'],'en-NG':['en-NG-AbeoNeural'],'en-HK':['en-HK-SamNeural'],fr:['fr-FR-RemyMultilingualNeural','fr-FR-LucienMultilingualNeural','fr-FR-VivienneMultilingualNeural'],de:['de-DE-FlorianMultilingualNeural','de-DE-SeraphinaMultilingualNeural']};
@@ -1025,9 +1025,9 @@ function azVoiceFor(region,idx){
   return region.style==='faa'?'en-US-GuyNeural':'en-GB-RyanNeural';
 }
 function xmlEsc(s){return String(s).replace(/[<>&'"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;',"'":'&apos;','"':'&quot;'}[c]));}
-async function azSynth(text,voice){
+async function azSynth(text,voice,f){
   const multi=/Multilingual/.test(voice);
-  const rate=Math.round((SET.rate-1)*100);
+  const rate=Math.round((rateFor(f)-1)*100);
   const inner=`<prosody rate="${rate>=0?'+':''}${rate}%">${xmlEsc(text)}</prosody>`;
   const ssml=`<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US"><voice name="${voice}">${multi?`<lang xml:lang="en-US">${inner}</lang>`:inner}</voice></speak>`;
   const r=await fetch(`https://${encodeURIComponent(AZ.region||'eastus')}.tts.speech.microsoft.com/cognitiveservices/v1`,{method:'POST',headers:{'Ocp-Apim-Subscription-Key':AZ.key,'Content-Type':'application/ssml+xml','X-Microsoft-OutputFormat':'audio-24khz-48kbitrate-mono-mp3'},body:ssml});
@@ -1048,13 +1048,13 @@ const BUZZ={
 // Clipping curve. The small offset (asym) adds even harmonics, which is the buzz you hear on airband audio.
 function radioCurve(k,asym){const key=k+'/'+asym;RADIO_CURVE=RADIO_CURVE||{};if(RADIO_CURVE[key])return RADIO_CURVE[key];
   const n=2048,c=new Float32Array(n),off=Math.tanh(k*asym);for(let i=0;i<n;i++){const x=i*2/n-1;c[i]=(Math.tanh(k*(x+asym))-off)/Math.tanh(k);}return RADIO_CURVE[key]=c;}
-async function playAudio(blob,f,fixedRate){
+async function playAudio(blob,f,fixedRate,noClick){
   unlockAudio();if(!actx)throw new Error('no audio');
   const buf=await actx.decodeAudioData(await blob.arrayBuffer());
   return new Promise(res=>{
     const src=actx.createBufferSource();src.buffer=buf;
     // small pitch differences make each controller and pilot sound like a different person
-    src.playbackRate.value=(fixedRate?1+((f.pitch||1)-1)*0.5:(f.pitch||1)*SET.rate);
+    src.playbackRate.value=(fixedRate?1+((f.pitch||1)-1)*0.5:(f.pitch||1)*rateFor(f));
     let out=src,hiss=null;
     if(SET.radio&&!f.cockpit){
       // VHF airband sound: narrow band, driven into clipping, compressed, with carrier hiss and crackle
@@ -1086,7 +1086,7 @@ async function playAudio(blob,f,fixedRate){
       hiss=actx.createBufferSource();hiss.buffer=nb;hiss.loop=true;const hb=bq('bandpass',2000,0.5);const hg=actx.createGain();hg.gain.value=P.hiss;
       hiss.connect(hb);hb.connect(hg);hg.connect(actx.destination);hiss.start();
     }
-    out.connect(actx.destination);TX.src=src;src.onended=()=>{if(hiss){try{hiss.stop();}catch(e){}}if(TX.src===src)TX.src=null;res();};radioClick();src.start();
+    out.connect(actx.destination);TX.src=src;src.onended=()=>{if(hiss){try{hiss.stop();}catch(e){}}if(TX.src===src)TX.src=null;res();};if(!noClick)radioClick();src.start();
   });
 }
 function engineFor(f){
@@ -1110,16 +1110,16 @@ function useClaudeVoiceOld(f){
 async function prepareAudio(f,text){
   if(HEADLESS)return null;const eng=engineFor(f);
   if(eng==='azure'){
-    for(let i=0;i<2;i++){try{return{blob:await azSynth(text,azVoiceFor(f.region,f.vIdx)),fixedRate:true};}catch(e){if(e.message!=='voice')break;}}
+    for(let i=0;i<2;i++){try{return{blob:await azSynth(text,azVoiceFor(f.region,f.vIdx),f),fixedRate:true};}catch(e){if(e.message!=='voice')break;}}
     if(AZDEAD)sys(AZDEAD);return null;
   }
-  if(eng==='kokoro'){try{return{blob:await kokoroSynth(text,kokoroVoiceFor(f.region,f.vIdx)),fixedRate:true};}catch(e){return null;}}
+  if(eng==='kokoro'){try{return{blob:await kokoroSynth(text,kokoroVoiceFor(f.region,f.vIdx),f),fixedRate:true};}catch(e){return null;}}
   if(eng==='piper'){try{return{blob:await piperSynth(text,f.piper)};}catch(e){PIPER.broken=!PIPER.lib;return null;}}
   return null;
 }
-async function playPrepared(f,text,prep){
+async function playPrepared(f,text,prep,first=true,last=true){
   let a=null;try{a=await prep;}catch(e){}
-  if(a&&a.blob){try{await playAudio(a.blob,f,a.fixedRate);radioClick(true);return;}catch(e){}}
+  if(a&&a.blob){try{await playAudio(a.blob,f,a.fixedRate,!first);if(last)radioClick(true);return;}catch(e){}}
   return sayAloudBasic(f,text,engineFor(f)==='claude');
 }
 async function sayAloud(f,text){if(HEADLESS)return;return playPrepared(f,text,prepareAudio(f,text));}
@@ -1128,15 +1128,15 @@ function sayAloudBasic(f,text,claudeFirst){
     const synth=typeof speechSynthesis!=='undefined'?speechSynthesis:null;
     if(claudeFirst&&CAP.tts){
       radioClick();
-      CAP.tts.speak(text,{voice:['buttery','airy','glassy','rounded'][f.vIdx%4],rate:SET.rate,language:'en'}).then(()=>{radioClick(true);setTimeout(res,300);},()=>res());
+      CAP.tts.speak(text,{voice:['buttery','airy','glassy','rounded'][f.vIdx%4],rate:rateFor(f),language:'en'}).then(()=>{radioClick(true);setTimeout(res,300);},()=>res());
     }else if(synth&&VOICES.length){
       radioClick();const u=new SpeechSynthesisUtterance(text);
       if(f.voice){u.voice=f.voice;u.lang=f.voice.lang;}
-      u.rate=SET.rate;u.pitch=f.pitch||1;
+      u.rate=rateFor(f);u.pitch=f.pitch||1;
       let done=false;const fin=()=>{if(done)return;done=true;radioClick(true);setTimeout(res,300);};
       u.onend=fin;u.onerror=fin;setTimeout(fin,5000+text.length*120/SET.rate);
       synth.speak(u);
-    }else if(CAP.tts){CAP.tts.speak(text,{voice:['buttery','airy','glassy','rounded'][f.vIdx%4],rate:SET.rate}).then(res,res);}
+    }else if(CAP.tts){CAP.tts.speak(text,{voice:['buttery','airy','glassy','rounded'][f.vIdx%4],rate:rateFor(f)}).then(res,res);}
     else res();
   });
 }
@@ -1610,20 +1610,23 @@ function dropTraffic(){for(const j of SQ)if(j.traffic&&!j.started)j.cancel=true;
 function enqueueSpeech(f,text,traffic){
   if(HEADLESS){TX.n++;TX.n--;TX.last=Date.now();return speakQ;}
   const eng=engineFor(f);
+  if(isAtis(f))text=String(text).replace(/\.\s+/g,', ');   // ATIS: no stops between items
   const pieces=(eng==='kokoro'||eng==='piper')?speechChunks(text):[text];
-  let last=speakQ;
-  for(const piece of pieces){
-    TX.n++;const job={f,text:piece,gen:TX.gen||0,prep:null,traffic:!!traffic};SQ.push(job);
+  let last=speakQ;const group=[];
+  pieces.forEach((piece,idx)=>{
+    TX.n++;const job={f,text:piece,gen:TX.gen||0,prep:null,traffic:!!traffic,group,idx};SQ.push(job);group.push(job);
     speakQ=speakQ.then(async()=>{
       if(job.gen!==(TX.gen||0)||job.cancel)return;job.started=true;
-      if(!job.prep)job.prep=prepareAudio(f,piece);
-      const nx=SQ[SQ.indexOf(job)+1];if(nx&&!nx.prep&&nx.gen===job.gen)nx.prep=prepareAudio(nx.f,nx.text);
+      // make all pieces of this transmission now, and wait for them on the first piece, so there are no gaps
+      for(const g of group)if(!g.prep)g.prep=prepareAudio(g.f,g.text);
+      if(idx===0&&group.length>1){try{await Promise.all(group.map(g=>g.prep));}catch(e){}}
+      const nx=SQ[SQ.indexOf(group[group.length-1])+1];if(nx&&!nx.prep&&nx.gen===job.gen)nx.prep=prepareAudio(nx.f,nx.text);
       let a=null;try{a=await job.prep;}catch(e){}
       if(job.gen!==(TX.gen||0)||job.cancel)return;
-      await playPrepared(f,piece,a);
+      await playPrepared(f,piece,a,idx===0,idx===group.length-1);
     }).catch(()=>{}).then(()=>{const i=SQ.indexOf(job);if(i>=0)SQ.splice(i,1);TX.n--;TX.last=Date.now();});
     last=speakQ;
-  }
+  });
   return last;
 }
 function playChatter(k,ex){
