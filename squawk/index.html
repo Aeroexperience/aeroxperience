@@ -120,6 +120,8 @@ a{color:var(--blue)}
 .xpdr.ok .xcode{color:var(--green)}.xpdr.bad .xcode{color:#ffb347}
 .xpdr .xmode{font-weight:600}.xpdr .xnote{color:var(--mute);flex:1;min-width:120px}
 .xpdr button{width:auto;font-size:12px;padding:4px 10px;min-height:0}
+.xpdr .xsim{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:#9aa5ae}.xpdr.ok .xsim{color:var(--green)}
+.xpdr .xauto{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--mute)}.xpdr .xauto input{width:auto;margin:0}
 #log>.msg{flex-shrink:0}
 #log.compact{gap:4px}
 #log.compact>.msg:not(.recent):not(.open){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:4px 10px;font-size:13px;cursor:pointer;max-width:100%}
@@ -323,6 +325,7 @@ td input{padding:6px 8px}
       <div id="rWant" class="want"></div>
     </div>
     <div class="prog" id="prog"></div>
+    <div class="xpdr" id="simBar"><span class="xlab">SIM DATA</span><span id="simVals" class="xsim"></span><span id="simNote" class="xnote"></span><label class="xauto"><input type="checkbox" id="simAuto"> Auto calls</label><button type="button" id="simBtn">Connect</button></div>
     <div class="xpdr" id="rpBar"><span class="xlab">RADIO PANEL</span><span id="rpNote" class="xnote"></span><button type="button" id="rpBtn">Connect panel</button></div>
     <div class="xpdr" id="xpdrBar"><span class="xlab">ATC XPDR</span><span id="xpdrCode" class="xcode">----</span><span id="xpdrMode" class="xmode"></span><span id="xpdrNote" class="xnote"></span><button type="button" id="xpdrBtn">Connect panel</button></div>
   </div>
@@ -655,7 +658,7 @@ function numEq(a,b){const lz=x=>x.replace(/^0+(?=\d)/,'');const d=x=>lz(x.replac
 function hasNum(set,v){for(const c of set)if(numEq(c,String(v)))return true;return false;}
 
 /* ================= state ================= */
-const DEF={traffic:'realistic',vatsim:true,showTraffic:true,engine:'auto',accent:'local',rate:1.0,strict:'strict',ai:true,radio:true,buzz:'real',gpu:false,logView:'compact',pttKey:'Space',pttPad:null,sbUser:''};
+const DEF={simAuto:true,traffic:'realistic',vatsim:true,showTraffic:true,engine:'auto',accent:'local',rate:1.0,strict:'strict',ai:true,radio:true,buzz:'real',gpu:false,logView:'compact',pttKey:'Space',pttPad:null,sbUser:''};
 let SET=Object.assign({},DEF);
 try{Object.assign(SET,JSON.parse(localStorage.getItem('squawk.settings')||'{}'));}catch(e){}
 function saveSet(){try{localStorage.setItem('squawk.settings',JSON.stringify(SET));}catch(e){}}
@@ -2269,6 +2272,57 @@ async function rpConnect(){
     sys('Radio panel connected. Squawk now follows its frequencies.');
   }catch(e){if(e&&e.name!=='NotFoundError')sys('Couldn\'t connect to the radio panel: '+(e.message||e));}
 }
+// Live flight data from FS2EFB (Xbox add-on) -> FS2EFB phone app -> squawk_sim_bridge.py on the Mac -> here.
+// Squawk polls the bridge once a second, shows altitude/speed/heading, and can make the
+// "Airborne", "Top of descent" style calls for you when the numbers say it's time.
+const SIM_URL='http://127.0.0.1:49080/state';
+const SIM={on:false,ok:false,d:null,timer:null,fails:0,hold:{},depGround:null};
+// Height above the airport. A pasted route has no airport elevation, so for departure we use the
+// altitude seen while taxiing; for arrival with no elevation we return null and the rules skip it.
+function simAgl(side){const a=S.plan&&S.plan[side],d=SIM.d;if(!d||d.alt==null)return null;
+  if(side==='dep'&&SIM.depGround!=null)return d.alt-SIM.depGround;return a&&a.elev?d.alt-a.elev:(side==='dep'?d.alt:null);}
+function simDist(side){const a=S.plan&&S.plan[side],d=SIM.d;if(!a||!d||d.lat==null||a.lat==null||isNaN(a.lat))return null;return hav({lat:d.lat,lon:d.lon},a)/1852;}
+// When each event should fire, from the live numbers. Each must stay true for a few seconds.
+const SIM_RULES={
+  airborne:{n:3,ok:d=>d.gs>60&&simAgl('dep')>400},
+  leaveDep:{n:3,ok:d=>{const x=simDist('dep');return d.alt>=Math.min(10000,S.plan.cruise-2000)||(x!=null&&x>35);}},
+  nextSector:{n:3,ok:()=>{const a=simDist('dep'),b=simDist('arr');return a!=null&&b!=null&&a/(a+b)>0.45;}},
+  tod:{n:3,ok:d=>{const b=simDist('arr');return b!=null&&b<(d.alt-((S.plan.arr.elev)||0))/1000*3+15;}},
+  nearArr:{n:3,ok:()=>{const b=simDist('arr');return b!=null&&b<45;}},
+  vectors:{n:3,ok:()=>{const b=simDist('arr');return b!=null&&b<25;}},
+  est:{n:3,ok:()=>{const b=simDist('arr'),h=simAgl('arr');return b!=null&&b<12&&(h==null||h<4500);}},
+  vacate:{n:6,ok:d=>d.gs<30&&Math.abs(d.vs||0)<200},
+};
+function simRules(){
+  if(!SIM.ok||!SET.simAuto||!S.plan||S.pending||['idle','done'].includes(S.phase))return;
+  const d=SIM.d;
+  for(const [k,r] of Object.entries(SIM_RULES)){
+    const e=EVENTS[k];if(!e)continue;
+    let ok=false;try{ok=e.when()&&r.ok(d);}catch(err){ok=false;}
+    SIM.hold[k]=ok?(SIM.hold[k]||0)+1:0;
+    if(ok&&SIM.hold[k]>=r.n){SIM.hold={};event(k);return;}
+  }
+}
+function renderSim(){
+  if(HEADLESS)return;const bar=$('simBar');if(!bar)return;const d=SIM.d;
+  bar.classList.toggle('ok',SIM.on&&SIM.ok);$('simBtn').textContent=SIM.on?'Disconnect':'Connect';$('simAuto').checked=!!SET.simAuto;
+  $('simVals').textContent=SIM.on&&SIM.ok&&d?`${Math.round(d.alt||0).toLocaleString()} ft  ${Math.round(d.gs||0)} kt  ${String(Math.round(((d.hdg??d.trk)||0)+360)%360).padStart(3,'0')}°  ${d.vs>0?'+':''}${Math.round((d.vs||0)/10)*10} fpm`:'';
+  $('simNote').textContent=!SIM.on?'Live altitude and position from the FS2EFB add-on, through the Squawk sim bridge on your Mac.'
+    :SIM.fails>2?'Can\'t reach the sim bridge. Start squawk_sim_bridge.py on this Mac, and if Chrome asks to access devices on your network, click Allow.'
+    :!SIM.ok?'Bridge running. Waiting for FS2EFB data from your phone...':SET.simAuto?'Squawk makes position calls for you.':'Showing live data. Tap the calls yourself.';
+}
+async function simPoll(){
+  try{const r=await fetch(SIM_URL,{cache:'no-store'});const d=await r.json();SIM.fails=0;SIM.d=d;
+    const was=SIM.ok;SIM.ok=!!d.ok;
+    if(SIM.ok&&d.gs!=null&&d.gs<40&&d.alt!=null&&['clr','gnd_out','twr_out'].includes(S.phase))SIM.depGround=d.alt;if(SIM.ok&&!was)sys('Live sim data connected.');if(!SIM.ok&&was)sys('Lost live sim data. Check FS2EFB and your phone.');
+    simRules();
+  }catch(e){SIM.fails++;if(SIM.ok)sys('Lost the sim bridge.');SIM.ok=false;}
+  renderSim();
+}
+function simToggle(){
+  if(SIM.on){clearInterval(SIM.timer);SIM.on=false;SIM.ok=false;SIM.d=null;renderSim();return;}
+  SIM.on=true;SIM.fails=0;SIM.hold={};simPoll();SIM.timer=setInterval(simPoll,1000);renderSim();
+}
 // ATC checks: after the clearance, and when departure gets you on radar
 function xpCheck(where){
   if(!XP.on||!S.squawk||XP.warned[where])return;
@@ -2522,6 +2576,7 @@ function init(){
   initPttBind();
   $('xpdrBtn').onclick=()=>{unlockAudio();xpConnect();};renderXpdr();
   $('rpBtn').onclick=()=>{unlockAudio();rpConnect();};renderRp();
+  $('simBtn').onclick=()=>{unlockAudio();simToggle();};$('simAuto').onchange=e=>{SET.simAuto=e.target.checked;saveSet();renderSim();};renderSim();
   window.addEventListener('blur',()=>pttUp());
   wireKnob($('kOuter'),'outer');wireKnob($('kInner'),'inner');
   window.addEventListener('resize',fitPanels);fitPanels();
