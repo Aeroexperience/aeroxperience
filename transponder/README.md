@@ -1,7 +1,10 @@
 # Squawk 777 transponder panel
 
-A 3D-printed copy of the Boeing 777 ATC transponder panel that plugs into an Xbox and works in
-Microsoft Flight Simulator 2024. It also links to the Squawk web app over Bluetooth, so ATC can
+A 3D-printed replica of the Boeing 777 ATC/TCAS transponder panel (Gables Engineering G7131,
+5.735 x 2.235 in) that plugs into an Xbox and works in Microsoft Flight Simulator 2024.
+The layout, knobs and lettering follow Gables' photo of the real panel.
+
+![preview](docs/panel_preview.png) It also links to the Squawk web app over Bluetooth, so ATC can
 check your squawk code.
 
 No soldering. Every part plugs in or screws into a terminal.
@@ -14,14 +17,17 @@ No soldering. Every part plugs in or screws into a terminal.
 - The Xbox can't send anything back, so the panel keeps track of the code itself. It assumes the
   sim starts at 1200 (change this in `firmware/settings.py`). If they ever don't match, hold IDENT
   for 3 seconds to sync.
-- The mode knob (STBY, ALT OFF, XPNDR, TA ONLY, TA/RA) shows on the panel and goes to Squawk. MSFS
-  has no key events for transponder modes, so it doesn't change the mode in the sim.
+- The mode knob (STBY, ALT RPTG OFF, XPNDR, TA ONLY, TA/RA) goes to Squawk. Pushing it is IDENT,
+  like the real panel. MSFS has no key events for transponder modes, so the mode doesn't change the sim.
+- The six small selectors (ABV/N/BLW and ABS/REL on each side, ALT SOURCE, XPNDR L/R) turn but
+  aren't wired; MSFS has no controls for them either.
 
 ## Folders
 
 - `firmware/` copy everything in here to the CIRCUITPY drive (CircuitPython 9 or 10).
   `lib/` holds the Adafruit libraries (MIT licence).
-- `stl/` printable parts. All fit a 180 x 180 mm bed.
+- `stl/` printable parts. All fit a 180 x 180 mm bed. Print 4 `dzus_head`, 6 `selector_knob`,
+  6 `selector_axle`, 2 code knobs, and 1 of everything else. Print `display_bezel` in black.
 - `docs/` wiring diagram and the faceplate label sheet (print at 100% scale).
 - `tools/` the Python scripts that make the parts, overlay and diagram. Change the numbers at the
   top of `make_parts.py` and run it again if your parts are a different size.
@@ -30,11 +36,10 @@ No soldering. Every part plugs in or screws into a terminal.
 
 | Part | Pin | Board |
 |---|---|---|
-| OLED | VCC / GND / SCL / SDA | 3V3 / GND / IO9 / IO8 |
+| OLED 1.3 in (SH1106) | VCC / GND / SCL / SDA | 3V3 / GND / IO9 / IO8 |
 | Left knob | CLK / DT / SW | IO4 / IO5 / IO6 |
 | Right knob | CLK / DT / SW | IO15 / IO16 / IO17 |
-| Mode knob | CLK / DT | IO10 / IO11 |
-| IDENT button | two leads | IO13 and GND |
+| Mode knob | CLK / DT / SW (SW = IDENT) | IO10 / IO11 / IO13 |
 | Every + and VCC | | 3V3 (through a Wago lever connector) |
 | Every GND | | GND (through a Wago lever connector) |
 
@@ -53,5 +58,5 @@ The SDK names for these are `XPNDR_1000_INC`, `XPNDR_1000_DEC` ... `XPNDR_1_DEC`
 
 ## Edit mode
 
-Normally the panel shows up only as a keyboard (that's what the Xbox wants). Hold IDENT while
-plugging it into your Mac and the CIRCUITPY drive appears so you can change files.
+Normally the panel shows up only as a keyboard (that's what the Xbox wants). Hold IDENT (push the
+mode knob) while plugging it into your Mac and the CIRCUITPY drive appears so you can change files.

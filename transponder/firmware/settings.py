@@ -1,4 +1,4 @@
-# Squawk 777 transponder panel: settings you can change.
+# Squawk 777 transponder panel (replica of the Gables 777 ATC/TCAS panel): settings you can change.
 # Edit this file on the CIRCUITPY drive (hold IDENT while plugging the panel into your Mac).
 
 import board
@@ -19,7 +19,9 @@ PIN_RIGHT_SW = board.IO17    # push the right knob to switch between digit 3 and
 PIN_MODE_CLK = board.IO10    # mode selector knob
 PIN_MODE_DT = board.IO11
 
-PIN_IDENT = board.IO13       # IDENT button (hold while plugging in = edit mode)
+# IDENT is the push button inside the mode knob (its SW pin), just like the real 777 panel.
+# Hold it while plugging in = edit mode.
+PIN_IDENT = board.IO13
 
 # If a knob moves 2 or 4 numbers per click, change this to 2 or 4. If it needs
 # 2 clicks to move one number, change it to 1 or 2.
@@ -33,8 +35,12 @@ REVERSE_LEFT = False
 REVERSE_RIGHT = False
 REVERSE_MODE = False
 
-# OLED address. Almost always 0x3C. Some boards use 0x3D.
+# Screen. "SH1106" for the 1.3 inch screen in the parts list, "SSD1306" for a 0.96 inch one.
+OLED_DRIVER = "SH1106"
+# Address. Almost always 0x3C. Some boards use 0x3D.
 OLED_ADDRESS = 0x3C
+# Which transponder the display says is active ("ATC L" or "ATC R").
+ACTIVE_SIDE = "L"
 
 # ---------- Code the sim starts with ----------
 # The Xbox can't tell the panel what code the sim has. The panel assumes the sim

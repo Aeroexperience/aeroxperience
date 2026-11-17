@@ -1,12 +1,12 @@
-# Squawk 777 transponder panel
+# Squawk 777 transponder panel (replica of the Gables 777 ATC/TCAS panel)
 # - Plugs into the Xbox as a USB keyboard and sends transponder key presses to MSFS.
 # - Talks to the Squawk web app over Bluetooth so ATC can check your code.
 #
-# Controls (like the 777 ATC panel):
-#   Left knob:  turn = change the selected digit (1 or 2), push = switch digit 1 <-> 2
-#   Right knob: turn = change the selected digit (3 or 4), push = switch digit 3 <-> 4
-#   Mode knob:  STBY, ALT OFF, XPNDR, TA ONLY, TA/RA
-#   IDENT:      press = ident. Hold 3 s = SYNC (tell the panel what the sim shows).
+# Controls:
+#   Left code knob:  turn = change the selected digit (1 or 2), push = switch digit 1 <-> 2
+#   Right code knob: turn = change the selected digit (3 or 4), push = switch digit 3 <-> 4
+#   Mode knob:       STBY, ALT RPTG OFF, XPNDR, TA ONLY, TA/RA
+#   IDENT (push the mode knob): press = ident. Hold 3 s = SYNC (tell the panel what the sim shows).
 
 import time
 import board
@@ -16,11 +16,13 @@ import keypad
 import rotaryio
 import terminalio
 import usb_hid
-import vectorio
 
 from adafruit_display_text import label
 from adafruit_hid.keyboard import Keyboard
-import adafruit_displayio_ssd1306
+try:
+    import bitmaptools
+except ImportError:
+    bitmaptools = None
 
 import settings as C
 
@@ -40,7 +42,7 @@ PLACE = ("1000", "100", "10", "1")
 # panel powers on, so the panel never sends keys until you turn a knob.)
 sim = [int(c) for c in C.SIM_START_CODE]          # what we think the sim shows
 panel = list(sim)                                 # what the panel shows
-mode = 4                                          # TA/RA
+mode = 2                                          # XPNDR (pointer dot at 12 o'clock)
 mode_acc = mode * C.MODE_CLICKS
 sel_left, sel_right = 0, 2                        # selected digit for each knob
 ident_until = 0
@@ -76,40 +78,89 @@ B_LEFT, B_RIGHT, B_IDENT = 0, 1, 2
 ident_down_at = None
 
 # ---------------- display ----------------
+# Looks like the 777 window: "ATC L" in the top-left, big segment digits on the right.
 displayio.release_displays()
 i2c = busio.I2C(C.PIN_SCL, C.PIN_SDA, frequency=400000)
-display = adafruit_displayio_ssd1306.SSD1306(make_bus(i2c), width=128, height=64)
+if C.OLED_DRIVER == "SH1106":
+    import adafruit_displayio_sh1106
+    display = adafruit_displayio_sh1106.SH1106(make_bus(i2c), width=128, height=64, colstart=2)
+else:
+    import adafruit_displayio_ssd1306
+    display = adafruit_displayio_ssd1306.SSD1306(make_bus(i2c), width=128, height=64)
 root = displayio.Group()
 display.root_group = root
 
-white = displayio.Palette(1)
-white[0] = 0xFFFFFF
+pal = displayio.Palette(2)
+pal[0] = 0x000000
+pal[1] = 0xFFFFFF
+bmp = displayio.Bitmap(128, 64, 2)
+root.append(displayio.TileGrid(bmp, pixel_shader=pal))
+top = label.Label(terminalio.FONT, text="", scale=2, x=2, y=9)
+root.append(top)
 
-top_left = label.Label(terminalio.FONT, text="", x=0, y=5)
-top_right = label.Label(terminalio.FONT, text="", x=104, y=5)
-code_lbl = label.Label(terminalio.FONT, text="1200", scale=3, x=28, y=28)
-bottom = label.Label(terminalio.FONT, text="", x=0, y=58)
-underline = vectorio.Rectangle(pixel_shader=white, width=16, height=2, x=28, y=48)
-for item in (top_left, top_right, code_lbl, underline, bottom):
-    root.append(item)
+DW, DH, T, GAP = 22, 38, 5, 6          # digit width, height, segment thickness, gap (pixels)
+X0 = 128 - (4 * DW + 3 * GAP) - 1
+Y0 = 22
+SEGS = {0: "abcdef", 1: "bc", 2: "abged", 3: "abgcd", 4: "fgbc", 5: "afgcd", 6: "afgedc", 7: "abc"}
 
-DIGIT_W = 18   # terminalio glyph is 6 px wide, scale 3
-
-def draw():
-    code_lbl.text = "".join(str(d) for d in panel)
-    # underline the two digits the knob you last touched controls
-    first = sel_left if active_side == "L" else sel_right
-    underline.x = code_lbl.x + first * DIGIT_W
-    underline.width = DIGIT_W - 2
-    if sync_mode:
-        top_left.text = "SYNC: set sim code"
-        bottom.text = "IDENT = done"
+def rect(x1, y1, x2, y2):
+    if bitmaptools:
+        bitmaptools.fill_region(bmp, x1, y1, x2, y2, 1)
     else:
-        top_left.text = ("ATC " + assigned) if assigned else ""
-        bottom.text = ("IDENT  " if time.monotonic() < ident_until else "") + MODES[mode]
-    top_right.text = "BT" if ble_connected() else ""
+        for yy in range(y1, y2):
+            for xx in range(x1, x2):
+                bmp[xx, yy] = 1
+
+def seg_digit(x, y, n):
+    h2 = DH // 2
+    box = {
+        "a": (x + T, y, x + DW - T, y + T),
+        "b": (x + DW - T, y + T + 1, x + DW, y + h2 - 1),
+        "c": (x + DW - T, y + h2 + 1, x + DW, y + DH - T - 1),
+        "d": (x + T, y + DH - T, x + DW - T, y + DH),
+        "e": (x, y + h2 + 1, x + T, y + DH - T - 1),
+        "f": (x, y + T + 1, x + T, y + h2 - 1),
+        "g": (x + T, y + h2 - T // 2, x + DW - T, y + h2 - T // 2 + T),
+    }
+    for sname in SEGS[n]:
+        rect(*box[sname])
 
 active_side = "L"
+cursor_until = 0        # show which digit a knob is on for a few seconds after you touch it
+note = ""               # short message in place of "ATC L" (mode change, ATC code, ...)
+note_until = 0
+_last_drawn = None
+
+def show_note(text, secs):
+    global note, note_until
+    note, note_until = text, time.monotonic() + secs
+
+def draw():
+    global _last_drawn
+    now = time.monotonic()
+    if sync_mode:
+        t = "SYNC"
+    elif now < ident_until:
+        t = "IDENT"
+    elif now < note_until:
+        t = note
+    else:
+        t = "ATC " + C.ACTIVE_SIDE
+    cur = (sel_left if active_side == "L" else sel_right) if (now < cursor_until or sync_mode) else -1
+    bt = ble_connected()
+    state = (tuple(panel), t, cur, bt)
+    if state == _last_drawn:
+        return
+    _last_drawn = state
+    top.text = t
+    bmp.fill(0)
+    for i, n in enumerate(panel):
+        seg_digit(X0 + i * (DW + GAP), Y0, n)
+    if cur >= 0:
+        x = X0 + cur * (DW + GAP)
+        rect(x, 62, x + DW, 64)
+    if bt:
+        rect(124, 0, 127, 3)
 
 # ---------------- Bluetooth (Squawk link) ----------------
 ble = uart = None
@@ -152,6 +203,8 @@ def ble_poll():
             if line:
                 s = line.decode().strip()
                 if s.startswith("A") and len(s) >= 5 and s[1:5].isdigit():
+                    if s[1:5] != assigned:
+                        show_note("SQ " + s[1:5], 6)    # ATC's code from Squawk
                     assigned = s[1:5]
                 elif s == "A":
                     assigned = ""
@@ -186,6 +239,7 @@ def change_digit(i, steps):
         plan_keys(i, steps)
 
 last_ble = 0
+last_draw = 0
 draw()
 while True:
     now = time.monotonic()
@@ -199,20 +253,23 @@ while True:
     if C.REVERSE_RIGHT: d[1] = -d[1]
     if C.REVERSE_MODE: d[2] = -d[2]
     if d[0]:
-        active_side = "L"; change_digit(sel_left, d[0]); changed = True
+        active_side = "L"; change_digit(sel_left, d[0]); cursor_until = now + 3; changed = True
     if d[1]:
-        active_side = "R"; change_digit(sel_right, d[1]); changed = True
+        active_side = "R"; change_digit(sel_right, d[1]); cursor_until = now + 3; changed = True
     if d[2]:
         mode_acc = max(0, min((len(MODES) - 1) * C.MODE_CLICKS, mode_acc + d[2]))
-        mode = mode_acc // C.MODE_CLICKS; changed = True
+        new_mode = mode_acc // C.MODE_CLICKS
+        if new_mode != mode:
+            mode = new_mode; show_note(MODES[mode], 2)
+        changed = True
 
     # buttons
     ev = buttons.events.get()
     while ev:
         if ev.key_number == B_LEFT and ev.pressed:
-            sel_left = 1 if sel_left == 0 else 0; active_side = "L"; changed = True
+            sel_left = 1 if sel_left == 0 else 0; active_side = "L"; cursor_until = now + 3; changed = True
         elif ev.key_number == B_RIGHT and ev.pressed:
-            sel_right = 3 if sel_right == 2 else 2; active_side = "R"; changed = True
+            sel_right = 3 if sel_right == 2 else 2; active_side = "R"; cursor_until = now + 3; changed = True
         elif ev.key_number == B_IDENT:
             if ev.pressed:
                 ident_down_at = now
@@ -238,8 +295,11 @@ while True:
         draw()
         ble_send()
         last_ble = now
-    elif now - last_ble > 1:
-        draw()        # keeps the IDENT and BT indicators current
-        ble_send()
-        last_ble = now
+    else:
+        if now - last_draw > 0.25:
+            draw()    # only redraws when something on screen changed (timers, BT)
+            last_draw = now
+        if now - last_ble > 1:
+            ble_send()
+            last_ble = now
     time.sleep(0.005)

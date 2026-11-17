@@ -14,7 +14,7 @@ try:
 except ImportError:
     pass
 
-ident = digitalio.DigitalInOut(board.IO13)
+ident = digitalio.DigitalInOut(board.IO13)   # IDENT (push the mode knob)
 ident.switch_to_input(pull=digitalio.Pull.UP)
 edit_mode = not ident.value   # button pulls the pin low when pressed
 ident.deinit()

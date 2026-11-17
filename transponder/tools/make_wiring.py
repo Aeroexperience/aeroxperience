@@ -7,7 +7,7 @@ a = o.append
 wires = []
 a(f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" font-family="Arial, Helvetica, sans-serif">')
 a(f'<rect width="{W}" height="{H}" fill="#ffffff"/>')
-a('<text x="500" y="34" font-size="22" font-weight="bold" text-anchor="middle">Squawk 777 transponder wiring (no soldering)</text>')
+a('<text x="500" y="34" font-size="22" font-weight="bold" text-anchor="middle">Squawk 777 transponder replica wiring (no soldering)</text>')
 
 COL = {"3V3": "#d62728", "GND": "#222222", "SDA": "#1f77b4", "SCL": "#17becf", "CLK": "#2ca02c", "DT": "#ff7f0e", "SW": "#9467bd", "BTN": "#8c564b"}
 
@@ -20,8 +20,8 @@ a(f'<text x="{bx+bw/2}" y="{by+44}" font-size="12" fill="#cfe" text-anchor="midd
 a(f'<rect x="{bx+bw/2-22}" y="{by+bh-28}" width="44" height="22" rx="4" fill="#bbb"/><text x="{bx+bw/2}" y="{by+bh-13}" font-size="11" text-anchor="middle">USB</text>')
 a('<text x="500" y="58" font-size="14" text-anchor="middle">Plug the board&#39;s "USB" port (not "UART") into the Xbox. Each colored line is one jumper wire.</text>')
 
-pins_left = ["3V3", "GND", "IO8", "IO9", "IO4", "IO5", "IO6", "IO13"]
-pins_right = ["3V3", "GND", "IO15", "IO16", "IO17", "IO10", "IO11", "GND"]
+pins_left = ["3V3", "GND", "IO8", "IO9", "IO4", "IO5", "IO6", "GND"]
+pins_right = ["3V3", "GND", "IO15", "IO16", "IO17", "IO10", "IO11", "IO13"]
 pin_y = {}
 for i, p in enumerate(pins_left):
     y = by + 80 + i * 46
@@ -51,14 +51,13 @@ def pin_dot(x, y, name, right_side):
 
 
 # Left side modules
-oled = module(60, 70, 200, "OLED 0.96 in (SSD1306)", ["VCC", "GND", "SCL", "SDA"])
+oled = module(60, 70, 200, "OLED 1.3 in (SH1106)", ["VCC", "GND", "SCL", "SDA"])
 enL = module(60, 250, 200, "LEFT knob (KY-040)", ["CLK", "DT", "SW", "+", "GND"])
-btn = module(60, 470, 200, "IDENT button (16 mm)", ["lead 1", "lead 2"])
 # Right side modules
 enR = module(740, 70, 200, "RIGHT knob (KY-040)", ["CLK", "DT", "SW", "+", "GND"])
-enM = module(740, 300, 200, "MODE knob (KY-040)", ["CLK", "DT", "SW", "+", "GND"])
+enM = module(740, 300, 200, "MODE knob + IDENT (KY-040)", ["CLK", "DT", "SW", "+", "GND"])
 
-for m in (oled, enL, btn):
+for m in (oled, enL):
     for p, y in m.items():
         pin_dot(260, y, p, True)
 for m in (enR, enM):
@@ -77,12 +76,12 @@ wire(260, oled["SCL"], bx, L("IO9", 3), COL["SCL"])
 wire(260, enL["CLK"], bx, L("IO4", 4), COL["CLK"])
 wire(260, enL["DT"], bx, L("IO5", 5), COL["DT"])
 wire(260, enL["SW"], bx, L("IO6", 6), COL["SW"])
-wire(260, btn["lead 1"], bx, L("IO13", 7), COL["BTN"])
 wire(740, enR["CLK"], bx + bw, R("IO15", 2), COL["CLK"])
 wire(740, enR["DT"], bx + bw, R("IO16", 3), COL["DT"])
 wire(740, enR["SW"], bx + bw, R("IO17", 4), COL["SW"])
 wire(740, enM["CLK"], bx + bw, R("IO10", 5), COL["CLK"])
 wire(740, enM["DT"], bx + bw, R("IO11", 6), COL["DT"])
+wire(740, enM["SW"], bx + bw, R("IO13", 7), COL["SW"])
 def poly(pts, color):
     d = "M" + " L".join(f"{x} {y}" for x, y in pts)
     wires.append(f'<path d="{d}" stroke="{color}" stroke-width="3" fill="none" stroke-linejoin="round"/>')
@@ -91,13 +90,13 @@ poly([(bx, L("3V3", 0)), (400, L("3V3", 0)), (400, 600), (370, 600), (370, 636)]
 poly([(bx, L("GND", 1)), (405, L("GND", 1)), (405, 612), (640, 612), (640, 636)], COL["GND"])
 for y in (oled["VCC"], enL["+"]):
     poly([(260, y), (290, y), (290, 590), (330, 590), (330, 636)], COL["3V3"])
-for y in (oled["GND"], enL["GND"], btn["lead 2"]):
+for y in (oled["GND"], enL["GND"]):
     poly([(260, y), (310, y), (310, 624), (620, 624), (620, 636)], COL["GND"])
 for y in (enR["+"], enM["+"]):
     poly([(740, y), (725, y), (725, 580), (390, 580), (390, 636)], COL["3V3"])
 for y in (enR["GND"], enM["GND"]):
     poly([(740, y), (705, y), (705, 636)], COL["GND"])
-a('<text x="760" y="470" font-size="12">MODE knob SW: leave unconnected</text>')
+a('<text x="745" y="470" font-size="12">Pushing the MODE knob = IDENT</text>')
 o[WIRES_HERE:WIRES_HERE] = wires
 a('</svg>')
 p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "wiring.svg")
