@@ -679,7 +679,7 @@ function fromManual(v){
 /* ================= frequencies ================= */
 function fakeFreq(seed,lo,hi){const steps=Math.floor((hi-lo)/0.025);return(lo+(hash(seed)%steps)*0.025).toFixed(3);}
 // Real frequencies from OurAirports, bundled next to this page (airports/freq/K.json, ...).
-const FREQ_CACHE={};let FREQ_VER=null;
+const FREQ_CACHE={};
 // OurAirports drops the last digit on some channels (128.32 for 128.325). Put it back.
 function fixMHz(f){const t=Math.round(f*1000);return(t%10===0&&(t%100===20||t%100===70))?(t+5)/1000:f;}
 function getJson(url){const ctl=new AbortController();const tm=setTimeout(()=>ctl.abort(),8000);
@@ -687,12 +687,23 @@ function getJson(url){const ctl=new AbortController();const tm=setTimeout(()=>ct
 async function realFreqs(icao){
   const ch=String(icao||'?')[0];
   try{
-    // Hand-checked list from the current Chart Supplement wins over OurAirports.
-    if(!FREQ_VER)FREQ_VER=getJson('airports/freq-verified.json');
-    const v=(await FREQ_VER)[icao];if(v&&v.length)return v.map(x=>{const y=[...x];y.verified=true;return y;});
     if(!FREQ_CACHE[ch])FREQ_CACHE[ch]=getJson(`airports/freq/${ch}.json`);
-    const d=(await FREQ_CACHE[ch])[icao];return d?d.map(x=>[x[0],x[1],fixMHz(x[2])]):null;
+    const d=(await FREQ_CACHE[ch])[icao];if(!d)return null;
+    // US airports: FAA NASR data {f:[...], t: tower call, a: approach call, d: departure call}
+    if(!Array.isArray(d)){const l=d.f.map(x=>{const y=[...x];y.faa=true;return y;});l.meta={t:d.t,a:d.a,d:d.d,h:d.h};return l;}
+    return d.map(x=>[x[0],x[1],fixMHz(x[2])]);
   }catch(e){return null;}
+}
+// FAA radio call (all caps) to how it is said: O HARE -> O'Hare, SOCAL -> SoCal
+function niceCall(c){if(!c)return '';const S={'O HARE':"O'Hare",SOCAL:'SoCal',NORCAL:'NorCal'};return S[c]||titleCase(c.toLowerCase());}
+// Departure frequency for your SID, or arrival frequency for your STAR, when the FAA lists one
+function pickProc(list,kind,proc,rwy,brgv){
+  if(!list||!proc)return null;const base=String(proc).toUpperCase().replace(/\d.*$/,'');if(base.length<3)return null;
+  let c=list.filter(x=>x[0]===kind&&x[2]>=118&&x[2]<137&&String(x[1]).toUpperCase().startsWith(base+' '));
+  if(!c.length)return null;
+  if(rwy){const sc=c.map(x=>rwyScore(x[1],rwy));const top=Math.max(0,...sc);c=top>0?c.filter((x,i)=>sc[i]===top):c.filter(x=>!/RWY/i.test(x[1]));if(!c.length)return null;}
+  if(brgv!=null&&c.length>1){const ok=c.filter(x=>{const s=sectorOf(x);return s&&s.b&&inArc(brgv,s.b);});if(ok.length)c=ok;}
+  return c[0];
 }
 // Sector: [from,to] bearing range and low/high altitude, from the entry or read from its description.
 function sectorOf(x){
@@ -700,7 +711,7 @@ function sectorOf(x){
   const d=String(x[1]),m=d.match(/\b(\d{3})\s*°?\s*-\s*(\d{3})\s*°?/);if(!m)return null;
   return{b:[+m[1],+m[2]],alt:/ABOVE/i.test(d)?'high':/BELOW|AND BLW/i.test(d)?'low':undefined};
 }
-function inArc(b,[f,t]){b=((b%360)+360)%360;if(t===360)t=359.999;return f<=t?b>=f&&b<=t:b>=f||b<=t;}
+function inArc(b,arc){if(!arc)return false;let [f,t]=arc;b=((b%360)+360)%360;if(t===360)t=359.999;return f<=t?b>=f&&b<=t:b>=f||b<=t;}
 // Runway match that knows 01L from 01R: 2 = exact, 1 = same number with no side given, 0 = no match.
 function rwyScore(desc,rwy){
   const m=String(desc).toUpperCase().match(/(?:RWY|RWAY|RUNWAY|RY)S?\s*(.*)/);if(!m||!rwy)return 0;
@@ -713,6 +724,8 @@ function pickFreq(list,types,o={}){
   if(!list)return null;
   let c=list.filter(x=>types.includes(String(x[0]).toUpperCase())&&x[2]>=118&&x[2]<137);
   if(o.not)c=c.filter(x=>!o.not.test(x[1]));
+  // Class B/C airspace channels only when the airport lists no regular approach/departure channel
+  {const main=c.filter(x=>!/^(CLASS [BC]|TRSA)\b/.test(x[1]));if(main.length)c=main;}
   if(o.prefer){const p=c.filter(x=>o.prefer.test(x[1]));if(p.length)c=p;}
   if(o.rwy){const sc=c.map(x=>rwyScore(x[1],o.rwy));const top=Math.max(0,...sc);if(top>0)c=c.filter((x,i)=>sc[i]===top);}
   if(o.brg!=null&&c.length>1){
@@ -770,7 +783,7 @@ function assignVoices(){if(!S.fac)return;for(const f of Object.values(S.fac)){f.
 async function buildFacilities(p){
   const dr=regionFor(p.dep.icao),ar=regionFor(p.arr.icao);
   const [rd,ra]=await Promise.all([realFreqs(p.dep.icao),realFreqs(p.arr.icao)]);
-  const mk=(key,name,region,vIdx,entry,lo,hi)=>({key,name,region,style:region.style,vIdx,freq:fmtFreq(entry?entry[2].toFixed(3):fakeFreq(p.dep.icao+p.arr.icao+key,lo,hi)),est:!entry,src:entry?entry[1]+(entry.verified?' (Chart Supplement)':''):'',pitch:[1,.93,1.07,.97,1.04,.95,1.05,.98,1.02,1][vIdx%10]});
+  const mk=(key,name,region,vIdx,entry,lo,hi)=>({key,name,region,style:region.style,vIdx,freq:fmtFreq(entry?entry[2].toFixed(3):fakeFreq(p.dep.icao+p.arr.icao+key,lo,hi)),est:!entry,src:entry?entry[1]+(entry.faa?' (FAA)':''):'',pitch:[1,.93,1.07,.97,1.04,.95,1.05,.98,1.02,1][vIdx%10]});
   const dn=p.dep.call,an=p.arr.call;
   const fd=dr.style==='faa',fa=ar.style==='faa';
   // Which way you leave and where you arrive from, for sectorized approach/departure frequencies
@@ -782,14 +795,14 @@ async function buildFacilities(p){
   let c2=p.firs.length>1&&FIRNAMES[p.firs[p.firs.length-1]]?FIRNAMES[p.firs[p.firs.length-1]]:centreFor(p.arr);
   const E={
     clr:pickFreq(rd,['CLD','DEL','CLNC','CD','PTD']),
-    gnd:pickFreq(rd,['GND'],{rwy:p.dep.rwy}),
+    gnd:pickFreq(rd,['GND'],{rwy:p.dep.rwy,prefer:/OUTBOUND/i,not:/INBOUND/i}),
     twr:pickFreq(rd,['TWR','TOWER'],{rwy:p.dep.rwy}),
-    dep:pickFreq(rd,['DEP','A/D','APP/DEP','APP','TCA','RDR'],{rwy:p.dep.rwy,prefer:/DEP|A\/D/,brg:outB,alt:'low'}),
+    dep:pickProc(rd,'DP',p.sid,p.dep.rwy,outB)||pickFreq(rd,['DEP','A/D','APP/DEP','APP','TCA','RDR'],{rwy:p.dep.rwy,prefer:/DEP|A\/D/,brg:outB,alt:'low'}),
     ctr1:pickFreq(rd,['CNTR','ACC']),
     ctr2:pickFreq(ra,['CNTR','ACC']),
-    app:pickFreq(ra,['APP','A/D','APP/DEP','ARR','DIR','TCA','RDR'],{rwy:p.arr.rwy,brg:inB,alt:'high'}),
+    app:pickProc(ra,'STAR',p.star,p.arr.rwy,inB)||pickFreq(ra,['APP','A/D','APP/DEP','ARR','DIR','TCA','RDR'],{rwy:p.arr.rwy,brg:inB,alt:'high',prefer:/\bIC\b/}),
     atwr:pickFreq(ra,['TWR','TOWER'],{rwy:p.arr.rwy}),
-    agnd:pickFreq(ra,['GND'],{rwy:p.arr.rwy}),
+    agnd:pickFreq(ra,['GND'],{rwy:p.arr.rwy,prefer:/INBOUND/i,not:/OUTBOUND/i}),
     datis:pickFreq(rd,['ATIS','D-ATIS'],{prefer:/DEP/i,not:/ARR/i})||pickFreq(rd,['AWOS','ASOS']),
     aatis:pickFreq(ra,['ATIS','D-ATIS'],{prefer:/ARR/i,not:/DEP/i})||pickFreq(ra,['AWOS','ASOS'])
   };
@@ -809,6 +822,12 @@ async function buildFacilities(p){
     datis:mk('datis',dn+(E.datis&&/AWOS|ASOS/.test(E.datis[0])?' '+E.datis[0]:' ATIS'),dr,9,E.datis,126.0,135.0),
     aatis:mk('aatis',an+(E.aatis&&/AWOS|ASOS/.test(E.aatis[0])?' '+E.aatis[0]:' ATIS'),ar,9,E.aatis,126.0,135.0)
   };
+  // US airports: use the FAA radio calls (Lindbergh Tower, SoCal Departure, O'Hare Ground)
+  const md=rd&&rd.meta,ma=ra&&ra.meta;
+  if(md&&fd){const t=niceCall(md.t);if(t){F.clr.name=t+' Clearance';F.gnd.name=t+' Ground';F.twr.name=t+' Tower';}
+    if(md.d&&E.dep)F.dep.name=niceCall(md.d)+' Departure';}
+  if(ma&&fa){const t=niceCall(ma.t);if(t){F.atwr.name=t+' Tower';F.agnd.name=t+' Ground';}
+    if(ma.a&&E.app)F.app.name=niceCall(ma.a)+' Approach';}
   // Small airports: no clearance delivery frequency means Ground gives the clearance.
   F.clr.noCD=!E.clr&&!!rd;
   if(F.clr.noCD){F.clr.name=F.gnd.name;F.clr.freq=F.gnd.freq;F.clr.est=F.gnd.est;F.clr.src=F.gnd.src;}

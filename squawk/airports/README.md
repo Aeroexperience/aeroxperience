@@ -13,8 +13,12 @@ Some airports have changed since 2017, so a few routes may not match the current
 
 `freq/<first letter>.json` maps each airport to its real COM frequencies `[type, description, MHz]` from OurAirports `airport-frequencies.csv` (tower, ground, clearance, ATIS/AWOS, approach, departure, center). Squawk picks the one for your runway when an airport lists several.
 
-## Hand-checked frequencies (`freq-verified.json`)
+## US frequencies (FAA NASR)
 
-OurAirports is missing some frequencies and has old ones for others. For the airports in `freq-verified.json`, the app uses that file instead. Each list was copied by hand from the current FAA Chart Supplement (cycle effective 2026-10-29, read in ForeFlight). Approach and departure entries can carry a sector: a bearing range from the airport and a low/high altitude band, so the app hands you the frequency for the direction you are flying.
+For US airports, `freq/*.json` comes from the FAA's 28-day NASR subscription (FRQ and ATC CSV groups, cycle effective 2026-10-29). This is the same data the Chart Supplement is printed from, and it is public domain. US entries look like `{"f": [[type, description, MHz, sector?], ...], "t": tower call, "a": approach call, "d": departure call, "h": tower hours}`. Sectors are bearing ranges from the airport plus a low/high altitude band. `DP` and `STAR` entries give the frequency for a specific departure or arrival procedure.
 
-To add an airport, copy its Communications section from the Chart Supplement into the same format. FAA data is public domain.
+To refresh every 28 days: download `29_Oct_2026_FRQ_CSV.zip` and `..._ATC_CSV.zip` (new date each cycle) from the FAA NASR subscription page and run:
+
+    python3 -I squawk/tools/faa_freq.py FRQ.csv ATC_BASE.csv <ourairports freq dir> squawk/airports/freq
+
+Airports outside the US still use OurAirports.
