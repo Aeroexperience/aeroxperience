@@ -12,3 +12,9 @@ Some airports have changed since 2017, so a few routes may not match the current
 ## Frequencies
 
 `freq/<first letter>.json` maps each airport to its real COM frequencies `[type, description, MHz]` from OurAirports `airport-frequencies.csv` (tower, ground, clearance, ATIS/AWOS, approach, departure, center). Squawk picks the one for your runway when an airport lists several.
+
+## Hand-checked frequencies (`freq-verified.json`)
+
+OurAirports is missing some frequencies and has old ones for others. For the airports in `freq-verified.json`, the app uses that file instead. Each list was copied by hand from the current FAA Chart Supplement (cycle effective 2026-10-29, read in ForeFlight). Approach and departure entries can carry a sector: a bearing range from the airport and a low/high altitude band, so the app hands you the frequency for the direction you are flying.
+
+To add an airport, copy its Communications section from the Chart Supplement into the same format. FAA data is public domain.
