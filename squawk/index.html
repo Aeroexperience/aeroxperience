@@ -1009,7 +1009,10 @@ function speechChunks(text,max=200){
   for(const s0 of parts){let s=s0;
     while(s.length>max){const cut=s.lastIndexOf(', ',max);const i=cut>40?cut+1:max;if(cur){out.push(cur);cur='';}out.push(s.slice(0,i).trim());s=s.slice(i).trim();}
     if(cur&&(cur+' '+s).length>max){out.push(cur);cur=s;}else cur=cur?cur+' '+s:s;}
-  if(cur)out.push(cur);return out.filter(Boolean);
+  if(cur)out.push(cur);
+  // Short first piece (up to the first comma) so the voice starts quickly; the rest is made while it plays.
+  if(out.length&&out[0].length>70){const c=out[0].indexOf(', ',20);if(c>0&&c<70){out.splice(0,1,out[0].slice(0,c+1).trim(),out[0].slice(c+1).trim());}}
+  return out.filter(Boolean);
 }
 
 const AZ_VOICE={'en-US':['en-US-GuyNeural','en-US-DavisNeural','en-US-AndrewMultilingualNeural','en-US-BrianMultilingualNeural'],'en-GB':['en-GB-RyanNeural','en-GB-ThomasNeural'],'en-IE':['en-IE-ConnorNeural'],'en-IN':['en-IN-PrabhatNeural'],'en-AU':['en-AU-WilliamNeural'],'en-NZ':['en-NZ-MitchellNeural'],'en-ZA':['en-ZA-LukeNeural'],'en-SG':['en-SG-WayneNeural'],'en-CA':['en-CA-LiamNeural'],'en-PH':['en-PH-JamesNeural'],'en-KE':['en-KE-ChilembaNeural'],'en-NG':['en-NG-AbeoNeural'],'en-HK':['en-HK-SamNeural'],fr:['fr-FR-RemyMultilingualNeural','fr-FR-LucienMultilingualNeural','fr-FR-VivienneMultilingualNeural'],de:['de-DE-FlorianMultilingualNeural','de-DE-SeraphinaMultilingualNeural']};
@@ -1602,19 +1605,21 @@ function speechFlush(){
   if(TX.src){try{TX.src.stop();}catch(e){}}
   if(typeof speechSynthesis!=='undefined'){try{speechSynthesis.cancel();}catch(e){}}
 }
-function enqueueSpeech(f,text){
+// Drop other traffic that hasn't started playing yet, so ATC's answer to you isn't stuck behind it.
+function dropTraffic(){for(const j of SQ)if(j.traffic&&!j.started)j.cancel=true;}
+function enqueueSpeech(f,text,traffic){
   if(HEADLESS){TX.n++;TX.n--;TX.last=Date.now();return speakQ;}
   const eng=engineFor(f);
   const pieces=(eng==='kokoro'||eng==='piper')?speechChunks(text):[text];
   let last=speakQ;
   for(const piece of pieces){
-    TX.n++;const job={f,text:piece,gen:TX.gen||0,prep:null};SQ.push(job);
+    TX.n++;const job={f,text:piece,gen:TX.gen||0,prep:null,traffic:!!traffic};SQ.push(job);
     speakQ=speakQ.then(async()=>{
-      if(job.gen!==(TX.gen||0))return;
+      if(job.gen!==(TX.gen||0)||job.cancel)return;job.started=true;
       if(!job.prep)job.prep=prepareAudio(f,piece);
       const nx=SQ[SQ.indexOf(job)+1];if(nx&&!nx.prep&&nx.gen===job.gen)nx.prep=prepareAudio(nx.f,nx.text);
       let a=null;try{a=await job.prep;}catch(e){}
-      if(job.gen!==(TX.gen||0))return;
+      if(job.gen!==(TX.gen||0)||job.cancel)return;
       await playPrepared(f,piece,a);
     }).catch(()=>{}).then(()=>{const i=SQ.indexOf(job);if(i>=0)SQ.splice(i,1);TX.n--;TX.last=Date.now();});
     last=speakQ;
@@ -1625,15 +1630,16 @@ function playChatter(k,ex){
   const fac=facOf(k);
   for(const ln of ex.lines){
     const m=ln.m&&ln.m.t!=null?ln.m:M(ln.m);
-    if(ln.who==='atc'){ui.other(fac.name,m.t,true);enqueueSpeech(fac,m.s);}
-    else{const po=pilotObj(ln.f);ui.other(ln.f.info.t+(ln.f.live?' (VATSIM)':''),m.t,false);enqueueSpeech(po,m.s);}
-    {const g=TX.gen||0;speakQ=speakQ.then(()=>g===(TX.gen||0)?new Promise(r=>setTimeout(r,250+Math.random()*500)):null);}
+    if(ln.who==='atc'){ui.other(fac.name,m.t,true);enqueueSpeech(fac,m.s,true);}
+    else{const po=pilotObj(ln.f);ui.other(ln.f.info.t+(ln.f.live?' (VATSIM)':''),m.t,false);enqueueSpeech(po,m.s,true);}
+    {const g=TX.gen||0,mark=SQ[SQ.length-1];speakQ=speakQ.then(()=>g===(TX.gen||0)&&!(mark&&mark.cancel)?new Promise(r=>setTimeout(r,250+Math.random()*500)):null);}
   }
 }
 function trafficTick(){
   if(HEADLESS||SET.traffic==='off'||!S.fac||S.phase==='idle'||S.phase==='done')return;
   if($('flight').classList.contains('hidden'))return;
   if(MIC.on||TX.n>0||Date.now()-TX.last<2500)return;
+  if(S.pending||Date.now()-(S.lastPilot||0)<8000)return;   // don't start chatter in the middle of your exchange
   if(S.pending&&Date.now()-(S.pendingAt||0)<12000)return;
   const k=facOnFreq(micFreq());if(!k||/atis/.test(k))return;
   if(!TR.next){TR.next=Date.now()+gapFor(k);return;}
@@ -1754,6 +1760,7 @@ function copilotSays(text){
 }
 function pilotSay(text,opts){
   text=String(text||'').trim();if(!text||!S.fac)return;
+  S.lastPilot=Date.now();dropTraffic();
   ui.pilot(text);
   if(opts&&opts.copilot)copilotSays(text);
   const n=normText(text);
@@ -2232,7 +2239,9 @@ function renderFlight(){
   $('prog').innerHTML=PHASES.slice(0,8).map((p,i)=>`<span class="${i<idx?'done':i===idx?'now':''}" title="${p[1]}"></span>`).join('');
   $('hintTxt').textContent=hint();$('hintSend').classList.toggle('hidden',!hintIsCall());
   const ev=$('events');ev.innerHTML='';
-  for(const [k,e] of Object.entries(EVENTS))if(e.when()){const b=document.createElement('button');b.textContent=e.label;b.onclick=()=>{unlockAudio();event(k);};ev.appendChild(b);}
+  let autoNote=false;
+  for(const [k,e] of Object.entries(EVENTS))if(e.when()){if(simAutoHandles(k)){autoNote=true;continue;}const b=document.createElement('button');b.textContent=e.label;b.onclick=()=>{unlockAudio();event(k);};ev.appendChild(b);}
+  if(autoNote){const n=document.createElement('div');n.className='muted';n.style.fontSize='12px';n.textContent='Squawk is watching your sim data and will make the next position call on its own.';ev.appendChild(n);}
   if(S.phase==='done'){const b=document.createElement('button');b.textContent='Fly again';b.onclick=()=>{$('log').innerHTML='';startFlight();RADIO.sby=fnorm(facOf('clr').freq);sys(`Tune ${facOf('clr').name} on ${fshow(facOf('clr').freq)} for your clearance.`);renderFlight();};ev.appendChild(b);}
   $('ptt').classList.toggle('live',MIC.on);$('ptt').innerHTML=MIC.on?'TRANS-<br>MITTING':'HOLD<br>TO TALK';
 }
@@ -2422,6 +2431,13 @@ function noteAssigned(t){
   const now=SIM.d&&SIM.d.alt!=null?SIM.d.alt:null;
   S.assigned={ft,dir:now==null?1:(ft>=now?1:-1),warned:false};
 }
+// True when live sim data will make this call on its own, so its button isn't needed.
+function simAutoHandles(k){
+  if(!SIM.on||!SIM.ok||!SET.simAuto||!SIM_RULES[k]||!SIM.d)return false;
+  if(['airborne','leaveDep','vacate'].includes(k))return SIM.d.alt!=null;
+  if(k==='nextSector')return simDist('dep')!=null&&simDist('arr')!=null;
+  return simDist('arr')!=null;
+}
 function simRules(){
   if(!SIM.ok||!S.plan||['idle','done'].includes(S.phase))return;
   simDeviations();
@@ -2444,14 +2460,14 @@ function renderSim(){
 }
 async function simPoll(){
   try{const r=await fetch(SIM_URL,{cache:'no-store'});const d=await r.json();SIM.fails=0;SIM.d=d;
-    const was=SIM.ok;SIM.ok=!!d.ok;
+    const was=SIM.ok;SIM.ok=!!d.ok;if(was!==SIM.ok)setTimeout(()=>ui.render(),0);
     if(SIM.ok&&d.gs!=null&&d.gs<40&&d.alt!=null&&['clr','gnd_out','twr_out'].includes(S.phase))SIM.depGround=d.alt;if(SIM.ok&&!was)sys('Live sim data connected.');if(!SIM.ok&&was)sys('Lost live sim data. Check FS2EFB and your phone.');
     simRules();
   }catch(e){SIM.fails++;if(SIM.ok)sys('Lost the sim bridge.');SIM.ok=false;}
   renderSim();
 }
 function simToggle(){
-  if(SIM.on){clearInterval(SIM.timer);SIM.on=false;SIM.ok=false;SIM.d=null;renderSim();return;}
+  if(SIM.on){clearInterval(SIM.timer);SIM.on=false;SIM.ok=false;SIM.d=null;renderSim();ui.render();return;}
   SIM.on=true;SIM.fails=0;SIM.hold={};simPoll();SIM.timer=setInterval(simPoll,1000);renderSim();
 }
 // ATC checks: after the clearance, and when departure gets you on radar
