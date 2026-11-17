@@ -110,7 +110,24 @@ a{color:var(--blue)}
 .prog span{flex:1;height:5px;border-radius:3px;background:var(--line)}
 .prog span.done{background:var(--green)}
 .prog span.now{background:var(--amber)}
-#log{display:flex;flex-direction:column;gap:8px;margin:8px 0 12px;min-height:120px}
+#log{display:flex;flex-direction:column;gap:8px;margin:4px 0 12px;min-height:120px;max-height:46vh;overflow-y:auto;overscroll-behavior:contain;padding-right:2px}
+.loghead{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.06em}
+.logbtns{display:flex;gap:4px}.logbtns button{font-size:12px;padding:3px 9px;width:auto;min-height:0;background:transparent;border:1px solid var(--line);color:var(--mute);border-radius:6px;text-transform:none;letter-spacing:0}
+.logbtns button.on{color:var(--text,#e6edf3);border-color:var(--blue)}
+#log>.msg{flex-shrink:0}
+#log.compact{gap:4px}
+#log.compact>.msg:not(.recent):not(.open){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:4px 10px;font-size:13px;cursor:pointer;max-width:100%}
+#log.compact>.msg:not(.recent):not(.open)>div{display:inline}
+#log.compact>.msg:not(.recent):not(.open) .lab{margin-right:6px}
+#log.compact>.msg:not(.recent):not(.open) .mark{margin-left:6px}
+#log>.msg.open,#log>.msg.recent{cursor:pointer}
+.grp .gbody{display:none;flex-direction:column;gap:4px;margin-top:4px}
+.grp.open .gbody,#log.full .grp .gbody{display:flex}
+#log.full .grp .gsum{display:none}
+.grp .gbody .msg{border:none;padding:0;background:none;max-width:100%;font-size:13px}
+.grp .gsum{color:#7d8f9e}
+#log.compact>.grp:not(.open)>.gbody{display:none!important}
+.grp .gbody .lab{display:inline;margin-right:6px}.grp .gbody .msg>div{display:inline}
 .msg{max-width:88%;padding:9px 12px;border-radius:12px;font-size:15px}
 .msg .lab{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--amber);margin-bottom:2px}
 .msg.atc{align-self:flex-start;background:var(--panel);border:1px solid var(--line)}
@@ -226,7 +243,8 @@ td input{padding:6px 8px}
       <div><label for="s_rate">Controller speed</label><input id="s_rate" type="range" min="0.8" max="1.35" step="0.05"></div>
       <div><label>&nbsp;</label>
         <label style="display:flex;gap:8px;align-items:center;margin:0"><input id="s_radio" type="checkbox" style="width:auto"> Radio static</label>
-        <label style="display:flex;gap:8px;align-items:center;margin:4px 0 0"><input id="s_ai" type="checkbox" style="width:auto"> Use Claude for unusual requests</label></div>
+        <label style="display:flex;gap:8px;align-items:center;margin:4px 0 0"><input id="s_ai" type="checkbox" style="width:auto"> Use Claude for unusual requests</label>
+        <label style="display:flex;gap:8px;align-items:center;margin:4px 0 0"><input id="s_gpu" type="checkbox" style="width:auto"> Use graphics card for Kokoro voices (faster, but can freeze some laptops)</label></div>
     </div>
     <details style="margin-top:8px"><summary>Azure voices (optional, most human)</summary>
       <p class="muted">Paste your Azure Speech key and region. They stay on this device only and never go into the code on GitHub. Free tier: 500,000 characters a month, roughly 100 flights.</p>
@@ -297,7 +315,8 @@ td input{padding:6px 8px}
     </div>
     <div class="prog" id="prog"></div>
   </div>
-  <div id="log"></div>
+  <div class="loghead"><span>Radio log</span><span class="logbtns"><button type="button" class="lv" data-lv="compact">Compact</button><button type="button" class="lv" data-lv="full">Full</button><button type="button" id="logClear">Clear</button></span></div>
+  <div id="log" class="compact"></div>
   <div class="hint" id="hint">
     <div class="lab">Suggested call</div>
     <div class="txt" id="hintTxt"></div>
@@ -625,7 +644,7 @@ function numEq(a,b){const lz=x=>x.replace(/^0+(?=\d)/,'');const d=x=>lz(x.replac
 function hasNum(set,v){for(const c of set)if(numEq(c,String(v)))return true;return false;}
 
 /* ================= state ================= */
-const DEF={traffic:'realistic',vatsim:true,showTraffic:true,engine:'auto',accent:'local',rate:1.0,strict:'strict',ai:true,radio:true,buzz:'real',sbUser:''};
+const DEF={traffic:'realistic',vatsim:true,showTraffic:true,engine:'auto',accent:'local',rate:1.0,strict:'strict',ai:true,radio:true,buzz:'real',gpu:false,logView:'compact',sbUser:''};
 let SET=Object.assign({},DEF);
 try{Object.assign(SET,JSON.parse(localStorage.getItem('squawk.settings')||'{}'));}catch(e){}
 function saveSet(){try{localStorage.setItem('squawk.settings',JSON.stringify(SET));}catch(e){}}
@@ -803,8 +822,8 @@ async function buildFacilities(p){
     app:pickProc(ra,'STAR',p.star,p.arr.rwy,inB)||pickFreq(ra,['APP','A/D','APP/DEP','ARR','DIR','TCA','RDR'],{rwy:p.arr.rwy,brg:inB,alt:'high',prefer:/\bIC\b/}),
     atwr:pickFreq(ra,['TWR','TOWER'],{rwy:p.arr.rwy}),
     agnd:pickFreq(ra,['GND'],{rwy:p.arr.rwy,prefer:/INBOUND/i,not:/OUTBOUND/i}),
-    datis:pickFreq(rd,['ATIS','D-ATIS'],{prefer:/DEP/i,not:/ARR/i})||pickFreq(rd,['AWOS','ASOS']),
-    aatis:pickFreq(ra,['ATIS','D-ATIS'],{prefer:/ARR/i,not:/DEP/i})||pickFreq(ra,['AWOS','ASOS'])
+    datis:pickFreq(rd,['ATIS','D-ATIS'],{prefer:/DEP/i,not:/^(?!.*DEP).*ARR/i})||pickFreq(rd,['AWOS','ASOS']),
+    aatis:pickFreq(ra,['ATIS','D-ATIS'],{prefer:/ARR/i,not:/^(?!.*ARR).*DEP/i})||pickFreq(ra,['AWOS','ASOS'])
   };
   if(!E.clr&&rd&&rd.length&&fd)E.clr=null;
   if(E.ctr1&&/CENTER|CENTRE|CONTROL|RADAR|CNTR/i.test(E.ctr1[1]))c1=facNameFrom(E.ctr1,c1,'Center');
@@ -881,14 +900,66 @@ function kokoroVoiceFor(region,idx){
   const list=us?KK_US:KK_UK;return list[idx%list.length];
 }
 function kokoroCached(){try{return localStorage.getItem('squawk.kokoro')==='1';}catch(e){return false;}}
-function kokoroBig(){return !!navigator.gpu&&!/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);}
+// The graphics card path is faster but has frozen some laptops, so it is off unless you turn it on.
+function kokoroBig(){return !!SET.gpu&&!!navigator.gpu&&!/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);}
+// Kokoro runs in a background worker so voice generation can never lock up the page.
+// If the browser won't start the worker, it falls back to running on the page.
+const KW={w:null,id:0,wait:new Map(),failed:false};
+function kokoroWorkerSrc(){return `import {KokoroTTS} from '${KK_LIB}';
+let tts=null;
+self.onmessage=async e=>{const m=e.data;
+  try{
+    if(m.type==='load'){
+      if(!tts){
+        const prog=p=>{try{self.postMessage({type:'prog',p:{status:p&&p.status,file:p&&p.file,loaded:p&&p.loaded,total:p&&p.total}});}catch(_){}};
+        if(m.gpu){try{tts=await KokoroTTS.from_pretrained('${KK_MODEL}',{dtype:'fp32',device:'webgpu',progress_callback:prog});self.postMessage({type:'mode',mode:'graphics card, full quality'});}catch(_){tts=null;}}
+        if(!tts){tts=await KokoroTTS.from_pretrained('${KK_MODEL}',{dtype:'q8',device:'wasm',progress_callback:prog});self.postMessage({type:'mode',mode:'standard'});}
+      }
+      self.postMessage({type:'ok',id:m.id});
+    }else if(m.type==='gen'){
+      const a=await tts.generate(m.text,{voice:m.voice,speed:m.speed});
+      const ab=await a.toBlob().arrayBuffer();
+      self.postMessage({type:'ok',id:m.id,ab},[ab]);
+    }
+  }catch(err){self.postMessage({type:'err',id:m.id,msg:String(err&&err.message||err)});}
+};`;}
+function kwCall(msg,timeout,onProg){
+  return new Promise((res,rej)=>{
+    const id=++KW.id;let tm=null;
+    if(timeout)tm=setTimeout(()=>{KW.wait.delete(id);rej(new Error('timeout'));kwKill('Voice took too long, restarting it.');},timeout);
+    KW.wait.set(id,{res:v=>{clearTimeout(tm);res(v);},rej:e=>{clearTimeout(tm);rej(e);},onProg});
+    KW.w.postMessage({...msg,id});
+  });
+}
+function kwKill(why){
+  if(KW.w){try{KW.w.terminate();}catch(e){}}
+  KW.w=null;for(const [,c] of KW.wait)c.rej(new Error(why||'stopped'));KW.wait.clear();
+  KOKORO.tts=null;KOKORO.loading=null;KOKORO.ready=false;
+}
+function kwStart(){
+  const url=URL.createObjectURL(new Blob([kokoroWorkerSrc()],{type:'text/javascript'}));
+  const w=new Worker(url,{type:'module'});KW.w=w;
+  w.onmessage=e=>{const m=e.data;
+    if(m.type==='prog'){for(const [,c] of KW.wait)if(c.onProg)c.onProg(m.p);return;}
+    if(m.type==='mode'){KOKORO.mode=m.mode;return;}
+    const c=KW.wait.get(m.id);if(!c)return;KW.wait.delete(m.id);
+    if(m.type==='ok')c.res(m.ab);else c.rej(new Error(m.msg));
+  };
+  w.onerror=e=>{e.preventDefault&&e.preventDefault();KW.failed=true;kwKill('worker error');};
+}
 async function kokoroLoad(onProg){
   if(KOKORO.tts)return KOKORO.tts;
   if(!KOKORO.loading)KOKORO.loading=(async()=>{
-    const {KokoroTTS}=await import(KK_LIB);
     let tts=null;
-    if(kokoroBig()){try{tts=await KokoroTTS.from_pretrained(KK_MODEL,{dtype:'fp32',device:'webgpu',progress_callback:onProg});KOKORO.mode='WebGPU, full quality';}catch(e){tts=null;}}
-    if(!tts){tts=await KokoroTTS.from_pretrained(KK_MODEL,{dtype:'q8',device:'wasm',progress_callback:onProg});KOKORO.mode='standard';}
+    if(!KW.failed&&typeof Worker!=='undefined'){
+      try{kwStart();await kwCall({type:'load',gpu:kokoroBig()},0,onProg);tts={worker:true};}
+      catch(e){KW.failed=true;kwKill();tts=null;}
+    }
+    if(!tts){
+      const {KokoroTTS}=await import(KK_LIB);
+      if(kokoroBig()){try{tts=await KokoroTTS.from_pretrained(KK_MODEL,{dtype:'fp32',device:'webgpu',progress_callback:onProg});KOKORO.mode='graphics card, full quality';}catch(e){tts=null;}}
+      if(!tts){tts=await KokoroTTS.from_pretrained(KK_MODEL,{dtype:'q8',device:'wasm',progress_callback:onProg});KOKORO.mode='standard';}
+    }
     KOKORO.tts=tts;KOKORO.ready=true;KOKORO.broken=false;try{localStorage.setItem('squawk.kokoro','1');}catch(e){}
     return tts;
   })();
@@ -896,8 +967,21 @@ async function kokoroLoad(onProg){
 }
 let KGEN=Promise.resolve();
 function kokoroSynth(text,voice){
-  const p=KGEN.then(async()=>{const tts=await kokoroLoad();const a=await tts.generate(text,{voice,speed:Math.min(1.35,SET.rate*1.08)});return a.toBlob();});
+  const speed=Math.min(1.35,SET.rate*1.08);
+  const p=KGEN.then(async()=>{
+    const tts=await kokoroLoad();
+    if(tts.worker){const ab=await kwCall({type:'gen',text,voice,speed},25000);return new Blob([ab],{type:'audio/wav'});}
+    const a=await tts.generate(text,{voice,speed});return a.toBlob();
+  });
   KGEN=p.catch(()=>{});return p;
+}
+// Split long transmissions (ATIS) into sentence-sized pieces so the voice model never gets a huge block at once.
+function speechChunks(text,max=200){
+  const parts=String(text).split(/(?<=[.!?])\s+/);const out=[];let cur='';
+  for(const s0 of parts){let s=s0;
+    while(s.length>max){const cut=s.lastIndexOf(', ',max);const i=cut>40?cut+1:max;if(cur){out.push(cur);cur='';}out.push(s.slice(0,i).trim());s=s.slice(i).trim();}
+    if(cur&&(cur+' '+s).length>max){out.push(cur);cur=s;}else cur=cur?cur+' '+s:s;}
+  if(cur)out.push(cur);return out.filter(Boolean);
 }
 
 const AZ_VOICE={'en-US':['en-US-GuyNeural','en-US-DavisNeural','en-US-AndrewMultilingualNeural','en-US-BrianMultilingualNeural'],'en-GB':['en-GB-RyanNeural','en-GB-ThomasNeural'],'en-IE':['en-IE-ConnorNeural'],'en-IN':['en-IN-PrabhatNeural'],'en-AU':['en-AU-WilliamNeural'],'en-NZ':['en-NZ-MitchellNeural'],'en-ZA':['en-ZA-LukeNeural'],'en-SG':['en-SG-WayneNeural'],'en-CA':['en-CA-LiamNeural'],'en-PH':['en-PH-JamesNeural'],'en-KE':['en-KE-ChilembaNeural'],'en-NG':['en-NG-AbeoNeural'],'en-HK':['en-HK-SamNeural'],fr:['fr-FR-RemyMultilingualNeural','fr-FR-LucienMultilingualNeural','fr-FR-VivienneMultilingualNeural'],de:['de-DE-FlorianMultilingualNeural','de-DE-SeraphinaMultilingualNeural']};
@@ -1048,7 +1132,7 @@ function parseFreqInput(s){
   if(isNaN(n)||n<118||n>136.99)return null;return n.toFixed(3);
 }
 function setActive(f,fromSwap){
-  const prev=RADIO.act;RADIO.act=fnorm(f);if(!fromSwap&&prev)RADIO.sby=prev;
+  const prev=RADIO.act;if(fnorm(f)!==fnorm(prev))speechFlush();RADIO.act=fnorm(f);if(!fromSwap&&prev)RADIO.sby=prev;
   renderRadio();
   if(RADIO.rx[RADIO.sel]||RADIO.sel===RADIO.mic)atisCheck(RADIO.act);
 }
@@ -1471,14 +1555,40 @@ function chatterFor(k){
   }
   return null;
 }
-function enqueueSpeech(f,text){TX.n++;const prep=HEADLESS?null:prepareAudio(f,text);speakQ=speakQ.then(()=>HEADLESS?null:playPrepared(f,text,prep)).catch(()=>{}).then(()=>{TX.n--;TX.last=Date.now();});return speakQ;}
+// Speech queue. Only the line playing now and the next one get voice audio made, so a burst of
+// traffic can't pile up work. Push to talk and frequency changes cancel everything waiting.
+const SQ=[];
+function speechFlush(){
+  TX.gen=(TX.gen||0)+1;SQ.length=0;
+  if(TX.src){try{TX.src.stop();}catch(e){}}
+  if(typeof speechSynthesis!=='undefined'){try{speechSynthesis.cancel();}catch(e){}}
+}
+function enqueueSpeech(f,text){
+  if(HEADLESS){TX.n++;TX.n--;TX.last=Date.now();return speakQ;}
+  const eng=engineFor(f);
+  const pieces=(eng==='kokoro'||eng==='piper')?speechChunks(text):[text];
+  let last=speakQ;
+  for(const piece of pieces){
+    TX.n++;const job={f,text:piece,gen:TX.gen||0,prep:null};SQ.push(job);
+    speakQ=speakQ.then(async()=>{
+      if(job.gen!==(TX.gen||0))return;
+      if(!job.prep)job.prep=prepareAudio(f,piece);
+      const nx=SQ[SQ.indexOf(job)+1];if(nx&&!nx.prep&&nx.gen===job.gen)nx.prep=prepareAudio(nx.f,nx.text);
+      let a=null;try{a=await job.prep;}catch(e){}
+      if(job.gen!==(TX.gen||0))return;
+      await playPrepared(f,piece,a);
+    }).catch(()=>{}).then(()=>{const i=SQ.indexOf(job);if(i>=0)SQ.splice(i,1);TX.n--;TX.last=Date.now();});
+    last=speakQ;
+  }
+  return last;
+}
 function playChatter(k,ex){
   const fac=facOf(k);
   for(const ln of ex.lines){
     const m=ln.m&&ln.m.t!=null?ln.m:M(ln.m);
     if(ln.who==='atc'){ui.other(fac.name,m.t,true);enqueueSpeech(fac,m.s);}
     else{const po=pilotObj(ln.f);ui.other(ln.f.info.t+(ln.f.live?' (VATSIM)':''),m.t,false);enqueueSpeech(po,m.s);}
-    speakQ=speakQ.then(()=>new Promise(r=>setTimeout(r,250+Math.random()*500)));
+    {const g=TX.gen||0;speakQ=speakQ.then(()=>g===(TX.gen||0)?new Promise(r=>setTimeout(r,250+Math.random()*500)):null);}
   }
 }
 function trafficTick(){
@@ -1951,7 +2061,39 @@ const ui={
     renderFlight();
   }
 };
-function addMsg(cls,lab,text){const d=document.createElement('div');d.className='msg '+cls;if(lab){const l=document.createElement('div');l.className='lab';l.textContent=lab;d.appendChild(l);}const t=document.createElement('div');t.textContent=text;d.appendChild(t);$('log').appendChild(d);d.scrollIntoView({block:'nearest',behavior:'smooth'});}
+function addMsg(cls,lab,text){
+  const log=$('log');const stick=log.scrollHeight-log.scrollTop-log.clientHeight<80;
+  const d=document.createElement('div');d.className='msg '+cls;
+  if(lab){const l=document.createElement('div');l.className='lab';l.textContent=lab;d.appendChild(l);}
+  const t=document.createElement('div');t.textContent=text;d.appendChild(t);
+  if(/\bother\b/.test(cls)){
+    // back-to-back calls between other planes and ATC fold into one row
+    let g=log.lastElementChild;
+    if(!g||!g.classList.contains('grp')){
+      g=document.createElement('div');g.className='msg other grp';g.dataset.n='0';
+      const sm=document.createElement('div');sm.className='gsum';const b=document.createElement('div');b.className='gbody';
+      g.appendChild(sm);g.appendChild(b);log.appendChild(g);
+    }
+    g.querySelector('.gbody').appendChild(d);
+    const n=+g.dataset.n+1;g.dataset.n=String(n);
+    g.querySelector('.gsum').textContent=`Other traffic (${n} call${n>1?'s':''}): ${lab?lab+': ':''}${text}`;
+  }else log.appendChild(d);
+  // keep the newest two calls to and from you in full
+  const main=[...log.children].filter(e=>e.classList.contains('atc')||e.classList.contains('pilot'));
+  main.forEach((e,i)=>e.classList.toggle('recent',i>=main.length-2));
+  // don't let the page get heavy on long flights
+  while(log.children.length>300)log.removeChild(log.firstElementChild);
+  if(stick)log.scrollTop=log.scrollHeight;
+}
+function setLogView(v){SET.logView=v;const log=$('log');log.classList.toggle('compact',v!=='full');log.classList.toggle('full',v==='full');
+  for(const b of document.querySelectorAll('.logbtns .lv'))b.classList.toggle('on',b.dataset.lv===(v==='full'?'full':'compact'));}
+function initLog(){
+  if(HEADLESS)return;const log=$('log');
+  log.addEventListener('click',e=>{const m=e.target.closest('#log>.msg');if(!m||!log.classList.contains('compact'))return;m.classList.toggle('open');});
+  for(const b of document.querySelectorAll('.logbtns .lv'))b.onclick=()=>{setLogView(b.dataset.lv);saveSet();};
+  $('logClear').onclick=()=>{log.innerHTML='';};
+  setLogView(SET.logView||'compact');
+}
 function show(id){for(const s of ['setup','review','flight'])$(s).classList.toggle('hidden',s!==id);W.scrollTo&&W.scrollTo(0,0);}
 function lcdText(f){const n=parseFloat(f);return isNaN(n)?'':n.toFixed(3);}
 function renderRadio(){
@@ -2014,8 +2156,7 @@ function micNote(){if(HEADLESS)return;$('micNote').textContent=micAvailable()?'H
 function pttDown(){
   if(MIC.on)return;
   unlockAudio();radioClick();
-  if(typeof speechSynthesis!=='undefined')speechSynthesis.cancel();
-  if(TX.src){try{TX.src.stop();}catch(e){}}
+  speechFlush();
   MIC.heard='';MIC.tmp='';MIC.held=true;MIC.at=Date.now();
   if(CAP.dict){
     CAP.dict.start().then(()=>{if(!MIC.held)CAP.dict.stop().catch(()=>{});}).catch(e=>{MIC.on=false;renderFlight();if(e&&e.code==='not_granted'){MIC.blocked=true;micNote();}});
@@ -2180,14 +2321,16 @@ function init(){
   $('s_vatsim').checked=SET.vatsim;$('s_vatsim').onchange=e=>{SET.vatsim=e.target.checked;saveSet();};
   $('s_showtraffic').checked=SET.showTraffic;$('s_showtraffic').onchange=e=>{SET.showTraffic=e.target.checked;saveSet();};
   $('s_engine').value=SET.engine;$('s_engine').onchange=e=>{SET.engine=e.target.value;saveSet();voicesNote();};
-  $('s_accent').value=SET.accent;$('s_strict').value=SET.strict;$('s_rate').value=SET.rate;$('s_radio').checked=SET.radio;$('s_buzz').value=SET.buzz||'real';$('s_ai').checked=SET.ai;$('sbUser').value=SET.sbUser||'';
+  $('s_accent').value=SET.accent;$('s_strict').value=SET.strict;$('s_rate').value=SET.rate;$('s_radio').checked=SET.radio;$('s_buzz').value=SET.buzz||'real';$('s_gpu').checked=!!SET.gpu;$('s_ai').checked=SET.ai;$('sbUser').value=SET.sbUser||'';
   $('s_accent').onchange=e=>{SET.accent=e.target.value;saveSet();assignVoices();voicesNote();};
   $('s_strict').onchange=e=>{SET.strict=e.target.value;saveSet();};
   $('s_rate').oninput=e=>{SET.rate=+e.target.value;saveSet();};
   $('s_radio').onchange=e=>{SET.radio=e.target.checked;saveSet();};
   $('s_buzz').onchange=e=>{SET.buzz=e.target.value;saveSet();};
+  $('s_gpu').onchange=e=>{SET.gpu=e.target.checked;saveSet();kwKill('setting changed');KW.failed=false;if(kokoroCached())kokoroLoad().catch(()=>{});};
   $('s_ai').onchange=e=>{SET.ai=e.target.checked;saveSet();};
   // voices
+  initLog();
   if(typeof speechSynthesis!=='undefined'){loadVoices();speechSynthesis.onvoiceschanged=()=>{loadVoices();assignVoices();voicesNote();};}
   // simbrief
   $('sbLoad').onclick=async()=>{
@@ -2245,7 +2388,7 @@ function init(){
   for(const el of document.querySelectorAll('#rtp [data-rad]'))el.onclick=()=>{unlockAudio();radioClick();const r=el.dataset.rad;
     if(RADIOS[r]){RADIO.hf='';RADIO.sel=r;}else{RADIO.hf=r;sys(r==='AM'?'AM is not used for ATC here.':'HF radios are for oceanic flights. Not modeled yet.');}renderRadio();};
   $('pnlOff').onclick=()=>{radioClick();RADIO.off=!RADIO.off;renderRadio();};
-  for(const b of document.querySelectorAll('#acp [data-mic]'))b.onclick=()=>{unlockAudio();radioClick();RADIO.mic=b.dataset.mic;RADIO.rx[RADIO.mic]=true;renderRadio();};
+  for(const b of document.querySelectorAll('#acp [data-mic]'))b.onclick=()=>{unlockAudio();radioClick();if(RADIO.mic!==b.dataset.mic)speechFlush();RADIO.mic=b.dataset.mic;RADIO.rx[RADIO.mic]=true;renderRadio();};
   for(const ch of document.querySelectorAll('#acp .acpch .win'))ch.onclick=()=>{unlockAudio();radioClick();const r=ch.parentElement.dataset.ch;if(r===RADIO.mic)return;RADIO.rx[r]=!RADIO.rx[r];renderRadio();if(RADIO.rx[r])atisCheck(RADIOS[r].act);};
   $('rSwap').onclick=()=>{unlockAudio();swapRadio();};
   const tune=()=>{unlockAudio();const f=parseFreqInput($('rType').value);if(!f){$('rType').value='';$('rType').placeholder='Use 118.000 to 136.975';return;}$('rType').value='';setActive(f);};
@@ -2255,7 +2398,7 @@ function init(){
   $('hintSend').onclick=()=>{unlockAudio();const h=hint();pilotSay(h.replace(/^Read back: /,''));};
   $('atisBtn').onclick=()=>{unlockAudio();playAtis();};$('atisBtn').title='Listen to ATIS on COM2 without changing COM1';
   $('sayAgainBtn').onclick=()=>{unlockAudio();if(S.last)atc(S.last.key,S.last.msg);};
-  $('endBtn').onclick=()=>{clearTimers();S.phase='idle';if(TX.src){try{TX.src.stop();}catch(e){}}if(typeof speechSynthesis!=='undefined')speechSynthesis.cancel();show('setup');};
+  $('endBtn').onclick=()=>{clearTimers();S.phase='idle';speechFlush();show('setup');};
   if(kokoroCached()&&(SET.engine==='auto'||SET.engine==='kokoro')&&!/claude/.test(location.hostname))kokoroLoad().then(()=>{renderKokoro();voicesNote();}).catch(()=>{});
   // Claude page capabilities (only exist when this page is opened as a Claude artifact)
   if(W.claude&&typeof W.claude.use==='function'){
