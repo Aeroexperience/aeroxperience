@@ -390,7 +390,7 @@ function tmpW(n){return (n<0?'minus ':'')+digitsW(String(Math.abs(n)));}
 function pick(a){return a[Math.floor(Math.random()*a.length)];}
 
 /* Message builder: parts are strings (same shown and spoken) or {t,s} pairs */
-function M(...parts){let t='',s='';for(const p of parts){if(p==null||p===false)continue;if(typeof p==='string'){t+=p;s+=p;}else{t+=p.t;s+=p.s;}}return{t:t.replace(/\s+/g,' ').trim(),s:spokenClean(s)};}
+function M(...parts){let t='',s='';for(const p of parts.flat(3)){if(p==null||p===false)continue;if(typeof p==='string'){t+=p;s+=p;}else{t+=p.t;s+=p.s;}}return{t:t.replace(/\s+/g,' ').trim(),s:spokenClean(s)};}
 
 /* ================= airlines and callsigns ================= */
 const AIRLINES={AAL:'American',DAL:'Delta',UAL:'United',SWA:'Southwest',JBU:'JetBlue',ASA:'Alaska',NKS:'Spirit Wings',FFT:'Frontier Flight',AAY:'Allegiant',HAL:'Hawaiian',SKW:'SkyWest',RPA:'Brickyard',ENY:'Envoy',EDV:'Endeavor',JIA:'Blue Streak',PDT:'Piedmont',ASH:'Air Shuttle',GJS:'Lindbergh',QXE:'Horizon',FDX:'FedEx',UPS:'UPS',GTI:'Giant',ACA:'Air Canada',WJA:'WestJet',ROU:'Rouge',BAW:'Speedbird',VIR:'Virgin',EZY:'Easy',RYR:'Ryanair',DLH:'Lufthansa',AFR:'Air France',KLM:'KLM',SWR:'Swiss',AUA:'Austrian',IBE:'Iberia',VLG:'Vueling',TAP:'Air Portugal',EIN:'Shamrock',SAS:'Scandinavian',FIN:'Finnair',THY:'Turkish',UAE:'Emirates',QTR:'Qatari',ETD:'Etihad',SIA:'Singapore',CPA:'Cathay',JAL:'Japan Air',ANA:'All Nippon',KAL:'Korean Air',QFA:'Qantas',ANZ:'New Zealand',AIC:'Air India',IGO:'IFly',JST:'Jetstar',EWG:'Eurowings',WZZ:'Wizz Air',AMX:'Aeromexico',VOI:'Volaris',AVA:'Avianca',JZA:'Jazz',POE:'Porter',SCX:'Sun Country',TRA:'Transavia',CFG:'Condor',AEA:'Europa',FDB:'Skydubai',VOZ:'Velocity',ITY:'Itarrow',BEL:'Beeline',AEE:'Aegean',LOT:'Pollot',TSC:'Air Transat',CSN:'China Southern',CCA:'Air China',CES:'China Eastern'};
@@ -628,7 +628,7 @@ function wxWhy(){
 
 /* ================= phrase pieces ================= */
 function fmtFreq(f){f=String(f);if(!f.includes('.'))return f;let [a,b]=f.split('.');b=b.replace(/0+$/,'');if(!b)b='0';return a+'.'+b;}
-function P_freq(f,style){const d=fmtFreq(f);const[a,b]=d.split('.');return{t:d,s:digitsW(a)+' '+DECIMAL+' '+digitsW(b||'0'),v:d};}
+function P_freq(f,style){const d=fmtFreq(f);const[a,b]=d.split('.');return{t:d,s:digitsW(a)+' '+(style==='faa'?'point':DECIMAL)+' '+digitsW(b||'0'),v:d};}
 function P_rwy(r){r=String(r||'').toUpperCase().replace(/^RW?Y?/,'');const m=r.match(/^(\d{1,2})([LRC])?$/);if(!m)return{t:r,s:digitsW(r),v:r};const num=m[1].padStart(2,'0');return{t:num+(m[2]||''),s:digitsW(num)+(m[2]?' '+{L:'left',R:'right',C:'center'}[m[2]]:''),v:String(+m[1])};}
 function P_hdg(h){h=((Math.round(h/10)*10)%360)||360;const s=String(h).padStart(3,'0');return{t:'heading '+s,s:'heading '+digitsW(s),v:s};}
 function P_sq(c){return{t:c,s:digitsW(c),v:c};}
@@ -648,7 +648,24 @@ function P_altim(met,style){
   if(a.u==='A')return{t:'altimeter '+a.v.slice(0,2)+'.'+a.v.slice(2),s:'altimeter '+digitsW(a.v),v:a.v};
   return{t:'QNH '+a.v,s:'Q N H '+digitsW(a.v),v:a.v};
 }
-function P_cs(){return S.csInfo;}
+function P_cs(){return shortCs(S.csInfo,S.cur);}
+/* ---- How real controllers talk (modeled on Atlanta and New York tower/ground/approach tapes) ----
+   After the first exchange, US controllers often drop the airline name: "1883, cleared to land".
+   First contact gets a time-of-day greeting, handoffs end with "have a good one" / "good day". */
+function shortCs(info,key){
+  if(!info||!info.airline||!info.num||!S.fac)return info;
+  const f=facOf(key||S.cur);if(!f||f.style!=='faa'||f.oceanic)return info;
+  if(((S.talk||{})[f.key]||0)<2||Math.random()>0.35)return info;
+  const hv=/ (Heavy|Super)$/.exec(info.t);
+  return {t:info.num+(hv?hv[0]:''),s:flightNumSpoken(info.num,true)+(hv?' '+hv[1].toLowerCase():''),airline:info.airline,num:info.num};
+}
+function localHour(side){const a=S.plan&&S.plan[side];const lon=a&&(a.lon??(apPos(side)||{}).lon);const d=new Date();return ((d.getUTCHours()+d.getUTCMinutes()/60+(lon!=null?lon/15:-5))%24+24)%24;}
+function greet(key){
+  S.greeted=S.greeted||new Set();if(S.greeted.has(key))return '';S.greeted.add(key);
+  const f=facOf(key);if(!f||Math.random()>(f.style==='faa'?0.65:0.3))return '';
+  const h=localHour(sideOfKey(key));return h<12?', good morning':h<18?', good afternoon':', good evening';
+}
+function signOff(st){return st==='faa'?randOf([' Have a good one.',' Good day.',' See you.',' Have a good day.','','']):randOf([' Good day.',' Bye.','','','']);}
 
 /* ================= number parsing for readbacks ================= */
 const WN={fife:5,zero:0,oh:0,one:1,wun:1,too:2,ait:8,two:2,three:3,tree:3,four:4,fower:4,five:5,fife:5,six:6,seven:7,eight:8,nine:9,niner:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19,twenty:20,thirty:30,forty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90};
@@ -998,7 +1015,13 @@ async function kokoroLoad(onProg){
 }
 // ATIS stations read about 30% faster than controllers, like real recordings.
 function isAtis(f){return !!f&&(f.key==='datis'||f.key==='aatis');}
-function rateFor(f){return SET.rate*1.1*(isAtis(f)?1.3:1);}   // everyone about 10% quicker, ATIS 30% more
+function rateFor(f){   // everyone about 10% quicker, ATIS 30% more; local controllers talk fast, busy US towers fastest
+  if(isAtis(f))return SET.rate*1.1*1.3;
+  const k=f&&f.key||'',faa=f&&f.style==='faa';
+  let b=/^(twr|atwr|gnd|agnd|clr)$/.test(k)?(faa?1.15:1.07):/^(dep|app)$/.test(k)?1.06:1;
+  if(b>1&&TR.level[sideOfKey(k)]>=3)b+=0.05;
+  return SET.rate*1.1*b;
+}
 let KGEN=Promise.resolve();
 function kokoroSynth(text,voice,f){
   const speed=Math.min(isAtis(f)?1.8:1.5,rateFor(f)*1.08);
@@ -1549,7 +1572,10 @@ function chatterFor(k){
   const side=sideOfKey(k),ap=S.plan[side],fac=facOf(k),st=fac.style,ta=TA(side),G=TAXI[side];
   const rw=P_rwy(ap.rwy||'27'),w=P_wind(metar(side).wind,st);const L=S.atis[side];
   const say=(f,...p)=>({who:'pilot',f,m:M(...p.flat(3))}),atcL=(...p)=>({who:'atc',m:M(...p.flat(3))});
-  const C=f=>f.info;const lines=[];const roll=Math.random();
+  const C0=f=>f.info,C=f=>{if(st!=='faa'||!f.info||!f.info.airline||Math.random()>0.3)return f.info;const hv=/ (Heavy|Super)$/.exec(f.info.t);return{t:f.info.num+(hv?hv[0]:''),s:flightNumSpoken(f.info.num,true)+(hv?' '+hv[1].toLowerCase():'')};};
+  const lines=[];const roll=Math.random();
+  const bye=()=>st==='faa'?randOf(['have a good one.','good day.','see you.','have a good evening.']):randOf(['good day.','bye.']);
+  const pbye=()=>st==='faa'?randOf(['see ya','good day','have a good one','so long']):'good day';
   const pickPark=f=>{const P=G.parking;const ga=f.ga||/^(C172|PA28|SR22|C182|BE36)$/.test(f.type);
     let c=ga?P.filter(x=>/\b(ga|general|fbo|ramp|tie|apron|aviation)\b/i.test(x.ref)):P.filter(x=>/gate|stand|^[A-Z]{0,2}\s?\d/i.test(x.ref)&&!/cargo|maint|fbo|general|heli|coast|uscg|military/i.test(x.ref));
     return c.length?randOf(c).ref:null;};
@@ -1605,11 +1631,16 @@ function chatterFor(k){
     if(landing){const f=nextFlight(side,'arr');const mi=3+Math.floor(Math.random()*8);
       lines.push(say(f,fac.name,', ',C(f),', ',{t:String(mi),s:nw(mi)},' mile final runway ',rw,'.'));
       if(TR.level[side]>=3&&Math.random()<0.3)lines.push(atcL(C(f),', ',fac.name,', continue, number two, traffic to follow is on a three mile final.'),say(f,'Continue, ',C(f),'.'));
+      else if(st==='faa'){const hi=randOf(['',', hello',', good evening',', good afternoon']),seq=randOf(['','','number two, ',['number two behind a ',randOf(['company Airbus','737','regional jet']),', ']]);
+        lines.push(atcL(C0(f),', ',fac.name,hi,', ',w,', ',seq,'runway ',rw,', cleared to land.'),say(f,randOf([['Cleared to land ',rw],[rw,', cleared to land'],['Clear to land ',rw]]),', ',C0(f),'.'));}
       else lines.push(atcL(C(f),', ',fac.name,', runway ',rw,', ',w,', cleared to land.'),say(f,'Cleared to land runway ',rw,', ',C(f),'.'));
+      if(st==='faa'&&/(^| )(\+|-)?(TS|VCTS)|CB\b/.test(ap.metar||'')&&Math.random()<0.25)lines.push(atcL('Attention all aircraft, hazardous weather information for thunderstorms within the area is available on flight service frequencies.'));
       return{lines};}
     const f=nextFlight(side,'dep');
-    if(roll>0.85){lines.push(atcL(C(f),', contact departure. Good day.'),say(f,'Over to departure, ',C(f),', good day.'));return{lines};}
-    if(roll>0.7){lines.push(atcL(C(f),', runway ',rw,', line up and wait.'),say(f,'Line up and wait runway ',rw,', ',C(f),'.'));return{lines};}
+    if(roll>0.85){lines.push(atcL(C(f),', contact departure, ',bye()),say(f,'Departure, ',C(f),', ',pbye(),'.'));return{lines};}
+    if(roll>0.7){const tr=st==='faa'?randOf(['',', traffic will be downfield',', traffic landing the parallel','']):'';lines.push(atcL(C(f),', runway ',rw,', line up and wait',tr,'.'),say(f,randOf([['Line up and wait ',rw],[rw,', line up and wait']]),', ',C(f),'.'));return{lines};}
+    if(st==='faa'){const hd=P_hdg(rwyHdg(ap.rwy)+randOf([0,10,10,20,-10])),nd=Math.random()<0.15?', no delay, traffic two mile final':'';
+      lines.push(atcL(C(f),', fly ',hd,', runway ',rw,', cleared for takeoff',nd,'.'),say(f,randOf([[hd.t.replace('heading ',''),' on the heading, cleared for takeoff ',rw],['Heading ',hd.t.replace('heading ',''),', ',rw,', cleared for takeoff'],['Clear for takeoff ',rw,', heading ',hd.t.replace('heading ','')]]),', ',C0(f),'.'));return{lines};}
     lines.push(atcL(C(f),', runway ',rw,', ',w,', cleared for takeoff.'),say(f,'Cleared for takeoff runway ',rw,', ',C(f),'.'));return{lines};
   }
   if(k==='dep'){
@@ -1696,7 +1727,7 @@ function trafficLabel(side){const lv=trafficLevel(S.plan[side].icao,TAXI[side]);
 /* ================= core radio ================= */
 function facOf(key){return S.fac[key];}
 function atc(key,msg){
-  const f=facOf(key);S.last={key,msg};noteAssigned(msg.t);
+  const f=facOf(key);S.last={key,msg};noteAssigned(msg.t);S.talk=S.talk||{};S.talk[key]=(S.talk[key]||0)+1;
   if(!onFreq(key)){sys(`You missed a call from ${f.name}. Your talk radio (VHF ${RADIO.mic}) is on ${fshow(micFreq())}, not ${fshow(f.freq)}.`);return speakQ;}
   ui.atc(f,msg);
   return enqueueSpeech(f,msg.s);
@@ -1918,7 +1949,7 @@ const HANDLERS={
     const fx=S.plan.firstFix;
     const climb=st==='faa'?'climb and maintain ':(a.ft>=ta?'climb ':'climb altitude ');
     const req=[R_num(a.v,a.t,a.s)];if(fx)req.push(R_re(/direct/,'direct '+fx,'direct '+fixSpoken(fx)));
-    issue('dep',M(P_cs(),', ',facOf('dep').name,', ','radar contact. ',climb.charAt(0).toUpperCase()+climb.slice(1),a,'.',fx?{t:' Proceed direct '+fx+'.',s:' Proceed direct '+fixSpoken(fx)+'.'}:null),
+    issue('dep',M(P_cs(),', ',facOf('dep').name,greet('dep'),', ','radar contact. ',climb.charAt(0).toUpperCase()+climb.slice(1),a,'.',fx?{t:' Proceed direct '+fx+'.',s:' Proceed direct '+fixSpoken(fx)+'.'}:null),
       req,()=>{sys('Climb out. Tap "Leaving departure airspace" around 10,000 ft.');later(6000,()=>xpCheck('dep'));},`${climb}${a.t}${fx?', direct '+fx:''}, ${S.csInfo.t}.`);
   },
   ctr(n){
@@ -1946,7 +1977,7 @@ const HANDLERS={
       S.f.appIn=true;
       const st=facOf('app').style,ta=TA('arr'),a=P_alt(appAlt(),ta),al=P_altim(metar('arr'),st),rw=P_rwy(S.plan.arr.rwy);S.f.alt=a.ft;
       const atisNote=atisSaid(n,S.atis.arr)?null:{t:` Information ${S.atis.arr} is current.`,s:` Information ${PHON_S[S.atis.arr]} is current.`};
-      if(st==='faa')issue('app',M(P_cs(),', ',facOf('app').name,', ',S.plan.arr.call,' ',al,'.',atisNote,' Expect ',{t:apTypeT(),s:apTypeS()},' runway ',rw,' approach. Descend and maintain ',a,'.'),
+      if(st==='faa')issue('app',M(P_cs(),', ',facOf('app').name,greet('app'),', ',S.plan.arr.call,' ',al,'.',atisNote,' Expect ',{t:apTypeT(),s:apTypeS()},' runway ',rw,' approach. Descend and maintain ',a,'.'),
         [R_num(a.v,a.t,a.s),R_num(al.v,al.t,al.s)],()=>sys('Tap "Ready for approach clearance" when you are lined up toward the airport.'),`Descend and maintain ${a.t}, ${al.t}, ${S.csInfo.t}.`);
       else issue('app',M(P_cs(),', ',facOf('app').name,', radar contact. Descend altitude ',a,', ',al,'.',atisNote,' Expect ',{t:apTypeT(),s:apTypeS()},' approach runway ',rw,'.'),
         [R_num(a.v,a.t,a.s),R_num(al.v,al.t,al.s)],()=>sys('Tap "Ready for approach clearance" when you are lined up toward the airport.'),`Descend altitude ${a.t}, ${al.t}, ${S.csInfo.t}.`);
@@ -2024,20 +2055,31 @@ function generic(n,key){
 }
 function takeoffClearance(){
   const st=facOf('twr').style,rw=P_rwy(S.plan.dep.rwy),w=P_wind(metar('dep').wind,st);S.f.tkoClr=true;
-  issue('twr',st==='faa'?M(P_cs(),', runway ',rw,', ',w,', cleared for takeoff.'):M(P_cs(),', runway ',rw,', cleared for take-off, ',w,'.'),
-    [R_num(rw.v,'runway '+rw.t,'runway '+rw.s),R_re(/clear(ed)? (for )?take ?-?off/,'cleared for takeoff')],
-    ()=>{S.f.tko=true;sys('Take off. Tap "Airborne" once you are climbing.');},`Runway ${rw.t}, cleared for takeoff, ${S.csInfo.t}.`);
+  const hd=st==='faa'&&!S.plan.sid?P_hdg(rwyHdg(S.plan.dep.rwy)+randOf([0,10,10,20,-10])):null;
+  const req=[R_num(rw.v,'runway '+rw.t,'runway '+rw.s),R_re(/clear(ed)? (for )?take ?-?off/,'cleared for takeoff')];if(hd)req.push(R_num(hd.v,hd.t,hd.s));
+  issue('twr',st==='faa'?M(P_cs(),', ',hd?['fly ',hd,', ']:'','runway ',rw,', ',hd&&Math.random()<0.6?'':[w,', '],'cleared for takeoff.'):M(P_cs(),', runway ',rw,', cleared for take-off, ',w,'.'),
+    req,()=>{S.f.tko=true;sys('Take off. Tap "Airborne" once you are climbing.');},hd?`${hd.t.replace('heading ','')} on the heading, runway ${rw.t}, cleared for takeoff, ${S.csInfo.t}.`:`Runway ${rw.t}, cleared for takeoff, ${S.csInfo.t}.`);
 }
 function landingClearance(){
   const st=facOf('atwr').style,rw=P_rwy(S.plan.arr.rwy),w=P_wind(metar('arr').wind,st);S.f.landClr=true;
-  issue('atwr',st==='faa'?M(P_cs(),', ',S.f.cont?'':facOf('atwr').name+', ','runway ',rw,', ',w,', cleared to land.'):M(P_cs(),', runway ',rw,', cleared to land, ',w,'.'),
+  const seq=st==='faa'&&SET.traffic!=='off'&&TR.level.arr>=2&&Math.random()<0.4?(Math.random()<0.5?'number two, ':['number two behind a ',randOf(['company Airbus','company 737','Boeing 737','regional jet']),', ']):'';
+  const wake=st==='faa'&&TR.level.arr>=3&&Math.random()<0.15?['caution wake turbulence, ',randOf(['heavy Airbus A330','heavy Boeing 767','Boeing 757']),' previous arrival, ']:'';
+  issue('atwr',st==='faa'?M(P_cs(),', ',S.f.cont?'':[facOf('atwr').name,greet('atwr'),', '],w,', ',wake,seq,'runway ',rw,', cleared to land.'):M(P_cs(),', runway ',rw,', cleared to land, ',w,'.'),
     [R_num(rw.v,'runway '+rw.t,'runway '+rw.s),R_re(/clear(ed)? to land/,'cleared to land')],
     ()=>sys('Land it. Tap "Landed and clear of the runway" once you exit.'),`Runway ${rw.t}, cleared to land, ${S.csInfo.t}.`);
 }
 function handoff(fromKey,toKey,nextPhase,label){
-  const st=facOf(fromKey).style,fq=P_freq(facOf(toKey).freq,st);
-  const extra=st==='faa'&&/twr|atwr/.test(fromKey)?' Good day.':'';
-  issue(fromKey,M(P_cs(),', contact ',facOf(toKey).name,' ',fq,'.',extra),[R_num(fq.v,fq.t,fq.s)],
+  const st=facOf(fromKey).style,fq=P_freq(facOf(toKey).freq,st),to=facOf(toKey);
+  const extra=signOff(st);
+  const dec=String(fq.v).split('.')[1]||'',decS=dec.replace(/0+$/,'');
+  if(st==='faa'&&/^(atwr|twr)$/.test(fromKey)&&/^(agnd|gnd)$/.test(toKey)&&decS&&Math.random()<0.5){   // "ground point seven five"
+    const sh={t:'point '+decS,s:'point '+digitsW(decS)};
+    issue(fromKey,M(P_cs(),', ground ',sh,'.',extra),[Object.assign(R_num(fq.v,fq.t,fq.s),{alt:[decS]})],
+      ()=>{S.phase=nextPhase;S.cur=toKey;sys(`"Ground point ${decS.split('').join(' ')}" means ${to.name} ${fq.t}. Tune it and check in.`);},
+      `Ground point ${decS}, ${S.csInfo.t}.`);
+    return;
+  }
+  issue(fromKey,M(P_cs(),', contact ',to.name,' ',fq,'.',extra),[R_num(fq.v,fq.t,fq.s)],
     ()=>{S.phase=nextPhase;S.cur=toKey;sys(`Tune ${fq.t} and check in with ${facOf(toKey).name}.`);},
     `${fq.t}, ${S.csInfo.t}.`);
 }
@@ -2258,7 +2300,7 @@ function quickStart(where){
 }
 function startFlight(){
   clearTimers();
-  S.phase='clr';S.cur='clr';S.f={};S.assigned=null;SIM.dh={};SIM.altK=null;SIM.altTold=false;S.posRep=null;SIM.lonB=null;F_ORIG=null;SIM.firHold=0;S.taxiQ=null;S.arrTaxi=null;S.taxiTo='';S.pending=null;S.last=null;S.score={ok:0,miss:0,misses:[]};S.tips=new Set();
+  S.phase='clr';S.cur='clr';S.f={};S.talk={};S.greeted=new Set();S.assigned=null;SIM.dh={};SIM.altK=null;SIM.altTold=false;S.posRep=null;SIM.lonB=null;F_ORIG=null;SIM.firHold=0;S.taxiQ=null;S.arrTaxi=null;S.taxiTo='';S.pending=null;S.last=null;S.score={ok:0,miss:0,misses:[]};S.tips=new Set();
   let sq;do{sq=String(1+Math.floor(Math.random()*6))+[0,0,0].map(()=>Math.floor(Math.random()*8)).join('');}while(/00$/.test(sq)||/^7[567]/.test(sq));
   S.squawk=sq;XP.warned={};xpSendAssigned();renderXpdr();
   const L='ABCDEFGHIJKLMNOPQRSTUVWXYZ';S.atis={dep:pick(L.split('')),arr:pick(L.split(''))};
