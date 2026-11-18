@@ -998,10 +998,10 @@ async function kokoroLoad(onProg){
 }
 // ATIS stations read about 30% faster than controllers, like real recordings.
 function isAtis(f){return !!f&&(f.key==='datis'||f.key==='aatis');}
-function rateFor(f){return SET.rate*(isAtis(f)?1.3:1);}
+function rateFor(f){return SET.rate*1.1*(isAtis(f)?1.3:1);}   // everyone about 10% quicker, ATIS 30% more
 let KGEN=Promise.resolve();
 function kokoroSynth(text,voice,f){
-  const speed=Math.min(isAtis(f)?1.7:1.35,rateFor(f)*1.08);
+  const speed=Math.min(isAtis(f)?1.8:1.5,rateFor(f)*1.08);
   const p=KGEN.then(async()=>{
     const tts=await kokoroLoad();
     if(tts.worker){const ab=await kwCall({type:'gen',text,voice,speed},25000);return new Blob([ab],{type:'audio/wav'});}
@@ -1130,8 +1130,19 @@ async function playPrepared(f,text,prep,first=true,last=true){
   return sayAloudBasic(f,text,engineFor(f)==='claude');
 }
 async function sayAloud(f,text){if(HEADLESS)return;return playPrepared(f,text,prepareAudio(f,text));}
+// Device voices can't be run through the radio filter, so play radio static underneath them instead.
+function staticBed(f){
+  if(!SET.radio||f.cockpit||!actx)return ()=>{};
+  try{unlockAudio();const len=2*actx.sampleRate,b=actx.createBuffer(1,len,actx.sampleRate),d=b.getChannelData(0);let last=0;
+    for(let i=0;i<len;i++){const w=Math.random()*2-1;last=(last+0.06*w)/1.06;d[i]=w*0.6+last*3+(Math.random()<0.0007?(Math.random()*2-1)*2:0);}
+    const src=actx.createBufferSource();src.buffer=b;src.loop=true;const bp=actx.createBiquadFilter();bp.type='bandpass';bp.frequency.value=1700;bp.Q.value=0.6;
+    const g=actx.createGain();g.gain.value=({light:0.035,real:0.06,rough:0.09})[SET.buzz||'real']||0.06;src.connect(bp);bp.connect(g);g.connect(actx.destination);src.start();
+    return ()=>{try{g.gain.setTargetAtTime(0,actx.currentTime,0.03);src.stop(actx.currentTime+0.15);}catch(e){}};
+  }catch(e){return ()=>{};}
+}
 function sayAloudBasic(f,text,claudeFirst){
-  return new Promise(res=>{
+  const stopBed=staticBed(f);
+  return new Promise(res0=>{const res=()=>{stopBed();res0();};
     const synth=typeof speechSynthesis!=='undefined'?speechSynthesis:null;
     if(claudeFirst&&CAP.tts){
       radioClick();
@@ -1524,6 +1535,15 @@ function gapFor(k){
   const mul=SET.traffic==='reduced'?2.2:1;
   return (base[0]+Math.random()*(base[1]-base[0]))*1000*mul;
 }
+// What you're doing on the runway, so tower doesn't clear anyone else onto it.
+function userRunway(k){
+  if(k==='twr'){if(S.phase==='twr_out'&&(S.f.luaw||S.f.tkoClr))return 'onrwy';if(S.phase==='twr_out')return 'waiting';if(S.phase==='dep'&&Date.now()-(S.f.airAt||0)<60000)return 'departed';}
+  if(k==='atwr'){if(S.phase==='twr_in'&&S.f.landClr)return 'landing';if(S.phase==='twr_in')return 'final';if(S.phase==='gnd_in'&&Date.now()-(S.f.vacAt||0)<30000)return 'vacated';}
+  return '';
+}
+function acDesc(t){t=String(t||'').toUpperCase();
+  const m=[[/^B73|^B3[89]M|^B38M/,'Boeing 737'],[/^B74/,'Boeing 747'],[/^B75/,'Boeing 757'],[/^B76/,'Boeing 767'],[/^B77/,'Boeing 777'],[/^B78/,'Boeing 787'],[/^A31|^A32|^A2[01]N/,'Airbus A320'],[/^A33/,'Airbus A330'],[/^A34/,'Airbus A340'],[/^A35/,'Airbus A350'],[/^A38/,'Airbus A380'],[/^E1[79]|^E2/,'Embraer'],[/^CRJ/,'regional jet'],[/^C172|^PA28|^SR2/,'light aircraft']];
+  for(const [r,n] of m)if(r.test(t))return n;return 'jet';}
 // Build one exchange (a few transmissions) for the controller on frequency `k`.
 function chatterFor(k){
   const side=sideOfKey(k),ap=S.plan[side],fac=facOf(k),st=fac.style,ta=TA(side),G=TAXI[side];
@@ -1573,7 +1593,15 @@ function chatterFor(k){
     return{lines};
   }
   if(k==='twr'||k==='atwr'){
-    const landing=k==='atwr'?roll<0.7:roll<0.45;
+    const U=userRunway(k),me=S.csInfo?S.csInfo.t:'',ty=acDesc(S.plan.type);
+    if(U==='onrwy'||U==='landing'){   // the runway is yours: others hold short or continue
+      const busy=U==='onrwy'?(S.f.tko?'departing':'on the runway'):'landing';
+      if(roll<0.55){const f=nextFlight(side,'arr');const mi=4+Math.floor(Math.random()*6);
+        lines.push(say(f,fac.name,', ',C(f),', ',{t:String(mi),s:nw(mi)},' mile final runway ',rw,'.'),atcL(C(f),', ',fac.name,', continue, number two, traffic is a ',ty,' ',busy,busy==='on the runway'?'':[' runway ',rw],'.'),say(f,'Continue, ',C(f),'.'));return{lines};}
+      const f=nextFlight(side,'dep');
+      lines.push(say(f,fac.name,', ',C(f),', holding short runway ',rw,', ready.'),atcL(C(f),', hold short runway ',rw,', traffic ',busy,'.'),say(f,'Holding short runway ',rw,', ',C(f),'.'));return{lines};
+    }
+    const landing=U==='waiting'?true:(k==='atwr'?roll<0.7:roll<0.45);
     if(landing){const f=nextFlight(side,'arr');const mi=3+Math.floor(Math.random()*8);
       lines.push(say(f,fac.name,', ',C(f),', ',{t:String(mi),s:nw(mi)},' mile final runway ',rw,'.'));
       if(TR.level[side]>=3&&Math.random()<0.3)lines.push(atcL(C(f),', ',fac.name,', continue, number two, traffic to follow is on a three mile final.'),say(f,'Continue, ',C(f),'.'));
@@ -1586,7 +1614,7 @@ function chatterFor(k){
   }
   if(k==='dep'){
     const f=nextFlight(side,'dep');const pass=P_alt(1000*(2+Math.floor(Math.random()*3)),ta),to=P_alt(Math.min(5000,ta),ta),up=P_alt(Math.min(S.plan.cruise,st==='faa'?17000:15000),ta);
-    if(roll<0.55){lines.push(say(f,fac.name,', ',C(f),', ',pass,' for ',to,'.'),atcL(C(f),', ',fac.name,', ',st==='faa'?'radar contact. Climb and maintain ':'identified. Climb ',up,'.'),say(f,'Climb and maintain ',up,', ',C(f),'.'));return{lines};}
+    if(roll<0.55){lines.push(say(f,fac.name,', ',C(f),', ',pass,' for ',to,'.'),atcL(C(f),', ',fac.name,', ',st==='faa'?'radar contact. Climb and maintain ':'radar contact. Climb ',up,'.'),say(f,'Climb and maintain ',up,', ',C(f),'.'));return{lines};}
     if(roll<0.8){const hd=P_hdg(Math.floor(Math.random()*36)*10);lines.push(atcL(C(f),', turn left ',hd,'.'),say(f,'Left ',hd,', ',C(f),'.'));return{lines};}
     const fq=freqSay();lines.push(atcL(C(f),', contact center ',fq,'.'),say(f,fq,', ',C(f),'.'));return{lines};
   }
@@ -1889,7 +1917,7 @@ const HANDLERS={
     const fx=S.plan.firstFix;
     const climb=st==='faa'?'climb and maintain ':(a.ft>=ta?'climb ':'climb altitude ');
     const req=[R_num(a.v,a.t,a.s)];if(fx)req.push(R_re(/direct/,'direct '+fx,'direct '+fixSpoken(fx)));
-    issue('dep',M(P_cs(),', ',facOf('dep').name,', ',st==='faa'?'radar contact. ':'identified. ',climb.charAt(0).toUpperCase()+climb.slice(1),a,'.',fx?{t:' Proceed direct '+fx+'.',s:' Proceed direct '+fixSpoken(fx)+'.'}:null),
+    issue('dep',M(P_cs(),', ',facOf('dep').name,', ','radar contact. ',climb.charAt(0).toUpperCase()+climb.slice(1),a,'.',fx?{t:' Proceed direct '+fx+'.',s:' Proceed direct '+fixSpoken(fx)+'.'}:null),
       req,()=>{sys('Climb out. Tap "Leaving departure airspace" around 10,000 ft.');later(6000,()=>xpCheck('dep'));},`${climb}${a.t}${fx?', direct '+fx:''}, ${S.csInfo.t}.`);
   },
   ctr(n){
@@ -1917,7 +1945,7 @@ const HANDLERS={
       const atisNote=atisSaid(n,S.atis.arr)?null:{t:` Information ${S.atis.arr} is current.`,s:` Information ${PHON_S[S.atis.arr]} is current.`};
       if(st==='faa')issue('app',M(P_cs(),', ',facOf('app').name,', ',S.plan.arr.call,' ',al,'.',atisNote,' Expect ',{t:apTypeT(),s:apTypeS()},' runway ',rw,' approach. Descend and maintain ',a,'.'),
         [R_num(a.v,a.t,a.s),R_num(al.v,al.t,al.s)],()=>sys('Tap "Ready for approach clearance" when you are lined up toward the airport.'),`Descend and maintain ${a.t}, ${al.t}, ${S.csInfo.t}.`);
-      else issue('app',M(P_cs(),', ',facOf('app').name,', identified. Descend altitude ',a,', ',al,'.',atisNote,' Expect ',{t:apTypeT(),s:apTypeS()},' approach runway ',rw,'.'),
+      else issue('app',M(P_cs(),', ',facOf('app').name,', radar contact. Descend altitude ',a,', ',al,'.',atisNote,' Expect ',{t:apTypeT(),s:apTypeS()},' approach runway ',rw,'.'),
         [R_num(a.v,a.t,a.s),R_num(al.v,al.t,al.s)],()=>sys('Tap "Ready for approach clearance" when you are lined up toward the airport.'),`Descend altitude ${a.t}, ${al.t}, ${S.csInfo.t}.`);
       return;
     }
@@ -2014,7 +2042,7 @@ const EVENTS={
   holdShort:{label:'Holding short',when:()=>(S.phase==='gnd_out'||S.phase==='gnd_in')&&S.taxiQ&&S.taxiQ.length&&!S.pending,fn:()=>{
     const step=S.taxiQ.shift();issueTaxiStep(S.cur,step,null,false);}},
   nearRwy:{label:'Near the runway',when:()=>S.phase==='gnd_out'&&S.f.taxi&&!S.pending&&!(S.taxiQ&&S.taxiQ.length),fn:()=>handoff('gnd','twr','twr_out')},
-  airborne:{label:'Airborne',when:()=>S.phase==='twr_out'&&S.f.tko&&!S.pending,fn:()=>handoff('twr','dep','dep')},
+  airborne:{label:'Airborne',when:()=>S.phase==='twr_out'&&S.f.tko&&!S.pending,fn:()=>{S.f.airAt=Date.now();handoff('twr','dep','dep');}},
   leaveDep:{label:'Leaving departure airspace',when:()=>S.phase==='dep'&&S.f.depIn&&!S.pending,fn:()=>handoff('dep','ctr1','ctr')},
   nextSector:{label:'Next sector',when:()=>S.phase==='ctr'&&S.cur==='ctr1'&&S.f.in_ctr1&&!S.pending,fn:()=>handoff('ctr1','ctr2','ctr')},
   tod:{label:'Top of descent',when:()=>S.phase==='ctr'&&!S.f.desc&&S.f['in_'+S.cur]&&!S.pending,fn:()=>{
@@ -2048,7 +2076,7 @@ const EVENTS={
     issue('atwr',M(P_cs(),', roger, fly runway heading, ',st==='faa'?'climb and maintain ':'climb altitude ',a,'. Contact Approach ',fq,'.'),[R_num(a.v,a.t,a.s),R_num(fq.v,fq.t,fq.s)],
       ()=>{S.phase='app';S.cur='app';S.f.appIn=false;S.f.appClr=false;sys('Tune Approach and check in again.');},`Runway heading, ${a.t}, ${fq.t}, ${S.csInfo.t}.`);
   }},
-  vacate:{label:'Landed and clear of the runway',when:()=>S.phase==='twr_in'&&S.f.landClr&&!S.pending,fn:()=>{
+  vacate:{label:'Landed and clear of the runway',when:()=>S.phase==='twr_in'&&S.f.landClr&&!S.pending,fn:()=>{S.f.vacAt=Date.now();
     const st=facOf('atwr').style,fq=P_freq(facOf('agnd').freq,st);
     const heavy=HEAVY.has(String(S.plan.type).toUpperCase())||SUPER.has(String(S.plan.type).toUpperCase());
     S.arrTaxi=TAXI.arr?planArrivalTaxi(TAXI.arr,S.plan.arr.rwy,S.plan.arr.park,heavy):null;
@@ -2457,6 +2485,13 @@ const SIM_URL='http://127.0.0.1:49080/state';
 const SIM={on:false,ok:false,d:null,timer:null,fails:0,hold:{},depGround:null};
 // Height above the airport. A pasted route has no airport elevation, so for departure we use the
 // altitude seen while taxiing; for arrival with no elevation we return null and the rules skip it.
+// Taxi helpers: you moved after the taxi clearance and have now stopped (at a hold-short line).
+function simStopped(){const d=SIM.d;if(!d)return false;if(d.gs>8)SIM.moved=true;return SIM.moved&&d.gs<2;}
+function simNearDepRwy(){
+  const d=SIM.d,G=TAXI.dep,key=rwyNorm(S.plan.dep.rwy);if(!d||d.lat==null)return true;
+  if(G&&G.runways){for(const R of G.runways)for(const e of (R.ends||[]))if(e&&e.lat!=null&&rwyNorm(e.id)===key)return hav({lat:d.lat,lon:d.lon},e)/1852<1.2;}
+  return true;   // no runway map: a stop with no hold-shorts left means you're at the runway
+}
 function simAgl(side){const a=S.plan&&S.plan[side],d=SIM.d;if(!d||d.alt==null)return null;
   if(side==='dep'&&SIM.depGround!=null)return d.alt-SIM.depGround;return a&&a.elev?d.alt-a.elev:(side==='dep'?d.alt:null);}
 // Airport position. Some airports have no coordinates in the plan, so use the middle of their runways (taxi data).
@@ -2470,7 +2505,10 @@ function apPos(side){
 function simDist(side){const a=apPos(side),d=SIM.d;if(!a||!d||d.lat==null)return null;return hav({lat:d.lat,lon:d.lon},a)/1852;}
 // When each event should fire, from the live numbers. Each must stay true for a few seconds.
 const SIM_RULES={
-  airborne:{n:3,ok:d=>d.gs>60&&simAgl('dep')>400},
+  airborne:{n:3,ok:d=>d.gs>60&&(simAgl('dep')>300||(d.vs||0)>500)},
+  holdShort:{n:4,ok:d=>simStopped()},
+  nearRwy:{n:4,ok:d=>simStopped()&&simNearDepRwy()},
+  ga:{n:2,ok:d=>S.f.landClr&&simDist('arr')!=null&&simDist('arr')<4&&(d.vs||0)>700&&d.gs>80},
   leaveDep:{n:3,ok:d=>{const x=simDist('dep');return d.alt>=Math.min(10000,S.plan.cruise-2000)||(x!=null&&x>35);}},
   nextSector:{n:3,ok:()=>{if(FIRS.d&&curFir())return false;const a=simDist('dep'),b=simDist('arr');return a!=null&&b!=null&&a/(a+b)>0.45;}},
   tod:{n:3,ok:d=>{const b=simDist('arr');return b!=null&&b<(d.alt-((S.plan.arr.elev)||0))/1000*3+15;}},
@@ -2664,7 +2702,7 @@ function simGoAround(){
 // True when live sim data will make this call on its own, so its button isn't needed.
 function simAutoHandles(k){
   if(!SIM.on||!SIM.ok||!SET.simAuto||!SIM_RULES[k]||!SIM.d)return false;
-  if(['airborne','leaveDep','vacate'].includes(k))return SIM.d.alt!=null;
+  if(['airborne','leaveDep','vacate','holdShort','nearRwy','ga'].includes(k))return SIM.d.alt!=null;
   if(k==='nextSector')return !!(FIRS.d&&curFir())||(simDist('dep')!=null&&simDist('arr')!=null);
   return simDist('arr')!=null;
 }
@@ -2672,6 +2710,8 @@ function simRules(){
   if(!SIM.ok||!S.plan||['idle','done'].includes(S.phase))return;
   simDeviations();
   if(simGoAround())return;
+  if(SET.simAuto&&S.phase==='twr_out'&&S.f.tkoClr&&!S.f.tko&&S.pending&&S.pending.key==='twr'&&SIM.d.gs>60&&(simAgl('dep')>300||(SIM.d.vs||0)>500)){
+    S.pending=null;S.f.tko=true;sys('You took off before reading back the takeoff clearance. Next time, read it back first.');}
   if(!SET.simAuto||S.pending)return;
   if(simCenters()||simDescents()||gaVectors())return;
   const d=SIM.d;
@@ -2679,7 +2719,7 @@ function simRules(){
     const e=EVENTS[k];if(!e)continue;
     let ok=false;try{ok=e.when()&&r.ok(d);}catch(err){ok=false;}
     SIM.hold[k]=ok?(SIM.hold[k]||0)+1:0;
-    if(ok&&SIM.hold[k]>=r.n){SIM.hold={};if(k==='leaveDep')firFirstCenter();event(k);return;}
+    if(ok&&SIM.hold[k]>=r.n){SIM.hold={};if(k==='leaveDep')firFirstCenter();if(k==='holdShort'||k==='nearRwy')SIM.moved=false;event(k);return;}
   }
 }
 function renderSim(){
