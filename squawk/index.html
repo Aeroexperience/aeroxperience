@@ -105,6 +105,7 @@ a{color:var(--blue)}
 .wantrow .xauto,.copi .xauto{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--mute);margin-top:6px}.xauto input{width:auto;margin:0}
 .copi{display:flex;gap:14px;flex-wrap:wrap;margin-top:6px}
 .msg.dev{border-left:3px solid #ff6b6b}
+.darktiles{filter:invert(1) hue-rotate(180deg) brightness(.8) contrast(.9) saturate(.5)}
 .maptip{background:#111a;color:#cfe;border:0;box-shadow:none;font-size:11px;padding:0 3px}
 .want.ok{color:var(--green)}
 #fchart td{cursor:pointer}
@@ -1052,7 +1053,9 @@ function radioCurve(k,asym){const key=k+'/'+asym;RADIO_CURVE=RADIO_CURVE||{};if(
   const n=2048,c=new Float32Array(n),off=Math.tanh(k*asym);for(let i=0;i<n;i++){const x=i*2/n-1;c[i]=(Math.tanh(k*(x+asym))-off)/Math.tanh(k);}return RADIO_CURVE[key]=c;}
 async function playAudio(blob,f,fixedRate,noClick){
   unlockAudio();if(!actx)throw new Error('no audio');
+  const g=TX.gen||0;
   const buf=await actx.decodeAudioData(await blob.arrayBuffer());
+  if(g!==(TX.gen||0))return;   // you changed frequency while this was loading: don't play it
   return new Promise(res=>{
     const src=actx.createBufferSource();src.buffer=buf;
     // small pitch differences make each controller and pilot sound like a different person
@@ -1121,7 +1124,9 @@ async function prepareAudio(f,text){
 }
 async function playPrepared(f,text,prep,first=true,last=true){
   let a=null;try{a=await prep;}catch(e){}
-  if(a&&a.blob){try{await playAudio(a.blob,f,a.fixedRate,!first);if(last)radioClick(true);return;}catch(e){}}
+  const g=TX.gen||0;
+  if(a&&a.blob){try{await playAudio(a.blob,f,a.fixedRate,!first);if(last&&g===(TX.gen||0))radioClick(true);return;}catch(e){}}
+  if(g!==(TX.gen||0))return;
   return sayAloudBasic(f,text,engineFor(f)==='claude');
 }
 async function sayAloud(f,text){if(HEADLESS)return;return playPrepared(f,text,prepareAudio(f,text));}
@@ -2582,7 +2587,7 @@ function mapLoad(){
 async function mapInit(){
   if(MAP.map||HEADLESS)return;let L;try{L=await mapLoad();}catch(e){$('mapNote').textContent='Couldn\'t load the map. Check your internet connection.';return;}
   MAP.map=L.map('fmap',{zoomControl:true,attributionControl:true,worldCopyJump:true}).setView([40,-40],3);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:12,attribution:'&copy; OpenStreetMap contributors &copy; CARTO'}).addTo(MAP.map);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:12,className:'darktiles',attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'}).addTo(MAP.map);
   MAP.trail=L.polyline([],{color:'#ffb547',weight:2}).addTo(MAP.map);
   mapRoute();mapUpdate();setTimeout(()=>MAP.map.invalidateSize(),50);
 }
