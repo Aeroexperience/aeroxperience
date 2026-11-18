@@ -129,7 +129,7 @@ a{color:var(--blue)}
 .xpdr .xmode{font-weight:600}.xpdr .xnote{color:var(--mute);flex:1;min-width:120px}
 .xpdr button{width:auto;font-size:12px;padding:4px 10px;min-height:0}
 .xpdr .xsim{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:#9aa5ae}.xpdr.ok .xsim{color:var(--green)}
-.xpdr .xauto{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--mute)}.xpdr .xauto input{width:auto;margin:0}
+.xpdr .xalt{width:84px;padding:4px 6px;font-size:12px;margin:0}.xpdr .xauto{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--mute)}.xpdr .xauto input{width:auto;margin:0}
 #log>.msg{flex-shrink:0}
 #log.compact{gap:4px}
 #log.compact>.msg:not(.recent):not(.open){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:4px 10px;font-size:13px;cursor:pointer;max-width:100%}
@@ -340,7 +340,7 @@ td input{padding:6px 8px}
       <div class="wantrow"><div id="rWant" class="want"></div><button type="button" id="tuneBtn">Auto tune</button><label class="xauto"><input type="checkbox" id="autoTune"> Always</label></div>
     </div>
     <div class="prog" id="prog"></div>
-    <div class="xpdr" id="simBar"><span class="xlab">SIM DATA</span><span id="simVals" class="xsim"></span><span id="simNote" class="xnote"></span><label class="xauto"><input type="checkbox" id="simAuto"> Auto calls</label><button type="button" id="simBtn">Connect</button></div>
+    <div class="xpdr" id="simBar"><span class="xlab">SIM DATA</span><span id="simVals" class="xsim"></span><span id="simNote" class="xnote"></span><input id="simAlt" class="xalt" placeholder="Altimeter" inputmode="text" title="What your altimeter reads, like FL380"><label class="xauto"><input type="checkbox" id="simAuto"> Auto calls</label><button type="button" id="simBtn">Connect</button></div>
     <div class="xpdr" id="rpBar" hidden><span class="xlab">RADIO PANEL</span><span id="rpNote" class="xnote"></span><button type="button" id="rpBtn">Connect panel</button></div>
     <div class="xpdr" id="xpdrBar" hidden><span class="xlab">ATC XPDR</span><span id="xpdrCode" class="xcode">----</span><span id="xpdrMode" class="xmode"></span><span id="xpdrNote" class="xnote"></span><button type="button" id="xpdrBtn">Connect panel</button></div>
   </div>
@@ -350,7 +350,7 @@ td input{padding:6px 8px}
     <div class="lab">Suggested call</div>
     <div class="txt" id="hintTxt"></div>
     <button id="hintSend">Send this call</button>
-    <div class="copi"><label class="xauto"><input type="checkbox" id="copVoice"> Copilot says my calls</label><label class="xauto"><input type="checkbox" id="copAuto"> Copilot does readbacks</label></div>
+    <div class="copi"><label class="xauto"><input type="checkbox" id="copVoice"> Copilot says my calls</label><label class="xauto"><input type="checkbox" id="copAuto"> Copilot does readbacks and check-ins</label></div>
   </div>
   <div class="events" id="events"></div>
   <details class="card" id="mapBox" style="padding:10px 14px"><summary>Flight map</summary><div id="fmap" style="height:280px;border-radius:8px;margin-top:8px;background:#0b1117"></div><p class="muted" id="mapNote" style="margin:6px 0 0">Connect SIM DATA to see where you are and which center you're in.</p></details>
@@ -1823,6 +1823,7 @@ function pilotSay(text,opts){
     if(RX.unable.test(n)){S.pending=null;atc(S.cur,M(P_cs(),', roger. Advise when able.'));ui.render();return;}
     return checkReadback(n);
   }
+  if(S.posRep&&/position|estimat/.test(n)){S.posRep=null;atc(S.cur,M(P_cs(),', ',fac.name,', roger.'));ui.render();return;}
   const h=HANDLERS[S.phase];
   if(h&&h(n,text)!==false){ui.render();return;}
   if(RX.ack.test(n)){ui.render();return;}
@@ -1928,8 +1929,10 @@ const HANDLERS={
         const a=P_alt(S.plan.cruise,TA('dep'));S.f.alt=a.ft;
         issue(key,M(P_cs(),', ',facOf(key).name,', ',st==='faa'?'climb and maintain ':'climb ',a,'.'),[R_num(a.v,a.t,a.s)],
           ()=>sys('Climb to cruise. Tap "Next sector" on long flights, then "Top of descent" when you get there.'),`Climb and maintain ${a.t}, ${S.csInfo.t}.`);
+      }else if(facOf(key).oceanic){
+        issue(key,M(P_cs(),', ',facOf(key).name,', roger. Report each ten degrees of longitude.'));
       }else{
-        issue(key,M(P_cs(),', ',facOf(key).name,', roger.'));
+        issue(key,M(P_cs(),', ',facOf(key).name,', ',S.f.fromOcean?'radar contact.':'roger.'));S.f.fromOcean=false;
       }
       return;
     }
@@ -2145,14 +2148,19 @@ function hint(){
     case 'gnd_out':return S.taxiQ&&S.taxiQ.length?'Taxi and hold short, then tap "Holding short".':S.f.taxi?'Taxi to the runway, then tap "Near the runway".':(S.f.pushed?`${f('gnd')}, ${c}, ready to taxi.`:`${f('gnd')}, ${c}, at the gate, request push back.`);
     case 'twr_out':return S.f.tko?'Take off, then tap "Airborne".':S.f.tkoClr?'Waiting for takeoff clearance.':S.f.luaw?'Line up and wait for your takeoff clearance.':`${f('twr')}, ${c}, holding short runway ${P_rwy(p.dep.rwy).t}, ready for departure.`;
     case 'dep':return S.f.depIn?'Climb out, then tap "Leaving departure airspace".':`${f('dep')}, ${c}, with you, passing 2,000 for ${P_alt(initAlt(),TA('dep')).t}.`;
-    case 'ctr':return !S.f['in_'+S.cur]?(S.cur==='ctr2'||(S.f.alt||0)>=p.cruise?`${f(S.cur)}, ${c}, with you, level ${P_alt(S.f.alt||p.cruise,TA('dep')).t}.`:`${f(S.cur)}, ${c}, with you, climbing through ${P_alt(Math.max((S.f.alt||depClimb())-2000,3000),TA('dep')).t} for ${P_alt(S.f.alt||depClimb(),TA('dep')).t}.`):S.f.desc?'Descend, then tap "Near the arrival airport".':`${f(S.cur)}, ${c}, request descent.`;
+    case 'ctr':return !S.f['in_'+S.cur]?(S.cur==='ctr2'||(S.f.alt||0)>=p.cruise?`${f(S.cur)}, ${c}, with you, level ${P_alt(S.f.alt||p.cruise,TA('dep')).t}.`:`${f(S.cur)}, ${c}, with you, climbing through ${P_alt(Math.max((S.f.alt||depClimb())-2000,3000),TA('dep')).t} for ${P_alt(S.f.alt||depClimb(),TA('dep')).t}.`):S.f.desc?'Descend, then tap "Near the arrival airport".':S.posRep?S.posRep.t:cruiseNote();
     case 'app':return !S.f.appIn?`${f('app')}, ${c}, with you descending, with information ${S.atis.arr}.`:!S.f.appClr?`${f('app')}, ${c}, ready for the approach.`:`${f('app')}, ${c}, established on the localizer.`;
     case 'twr_in':return S.f.landClr?'Land, then tap "Landed and clear of the runway".':S.f.cont?'Continue the approach and wait for landing clearance.':`${f('atwr')}, ${c}, on the ${apTypeT()} runway ${P_rwy(p.arr.rwy).t}.`;
     case 'gnd_in':return S.taxiQ&&S.taxiQ.length?'Taxi and hold short, then tap "Holding short".':`${f('agnd')}, ${c}, clear of runway ${P_rwy(p.arr.rwy).t}${S.arrTaxi?' at '+S.arrTaxi.exit:''}, taxi to ${S.plan.arr.park?gateSay(S.plan.arr.park,facOf('agnd').style):(S.csInfo.airline?'the gate':'parking')}.`;
     default:return 'Flight complete.';
   }
 }
-function hintIsCall(){const h=hint();return S.pending||(/,/.test(h)&&!/^(Taxi|Take|Climb|Descend|Land|Waiting|Line|Continue|Flight)/.test(h));}
+function cruiseNote(){
+  const a=S.plan.arr.icao||S.plan.arr.call;
+  if(SIM.ok&&SET.simAuto)return `Cruise. Squawk hands you to each new controller and starts your descent near ${a}.`+(facOf(S.cur).oceanic?' Over the ocean you will give position reports.':'');
+  return S.cur==='ctr1'?`Cruise. Tap "Next sector" on long flights, then "Top of descent" when you get near ${a}.`:`Cruise. Tap "Top of descent" when you get near ${a} (about 3 miles for every 1,000 ft you need to lose).`;
+}
+function hintIsCall(){const h=hint();return S.pending||(/,/.test(h)&&!/^(Taxi|Take|Climb|Descend|Land|Waiting|Line|Continue|Flight|Cruise)/.test(h));}
 
 /* ---------- Live runways ----------
    US airports: read the runways in use from the live D-ATIS (datis.clowd.io).
@@ -2250,7 +2258,7 @@ function quickStart(where){
 }
 function startFlight(){
   clearTimers();
-  S.phase='clr';S.cur='clr';S.f={};S.assigned=null;SIM.dh={};F_ORIG=null;SIM.firHold=0;S.taxiQ=null;S.arrTaxi=null;S.taxiTo='';S.pending=null;S.last=null;S.score={ok:0,miss:0,misses:[]};S.tips=new Set();
+  S.phase='clr';S.cur='clr';S.f={};S.assigned=null;SIM.dh={};SIM.altK=null;SIM.altTold=false;S.posRep=null;SIM.lonB=null;F_ORIG=null;SIM.firHold=0;S.taxiQ=null;S.arrTaxi=null;S.taxiTo='';S.pending=null;S.last=null;S.score={ok:0,miss:0,misses:[]};S.tips=new Set();
   let sq;do{sq=String(1+Math.floor(Math.random()*6))+[0,0,0].map(()=>Math.floor(Math.random()*8)).join('');}while(/00$/.test(sq)||/^7[567]/.test(sq));
   S.squawk=sq;XP.warned={};xpSendAssigned();renderXpdr();
   const L='ABCDEFGHIJKLMNOPQRSTUVWXYZ';S.atis={dep:pick(L.split('')),arr:pick(L.split(''))};
@@ -2482,7 +2490,18 @@ async function rpConnect(){
 // Squawk polls the bridge once a second, shows altitude/speed/heading, and can make the
 // "Airborne", "Top of descent" style calls for you when the numbers say it's time.
 const SIM_URL='http://127.0.0.1:49080/state';
-const SIM={on:false,ok:false,d:null,timer:null,fails:0,hold:{},depGround:null};
+const SIM={on:false,ok:false,d:null,timer:null,fails:0,hold:{},depGround:null,altK:null};
+// FS2EFB only sends GPS (true) altitude. Flight levels are pressure altitude, and in cold air up high
+// the two can be 1,000 to 2,500 ft apart (FL380 can show as about 35,900 GPS). The pilot types what
+// the altimeter reads once, and Squawk scales the GPS number by that ratio from 5,000 ft up.
+function altFix(g){if(g==null||!SIM.altK)return g;const w=Math.max(0,Math.min(1,(g-5000)/10000));return Math.round(g*(1+(SIM.altK-1)*w));}
+function setAltimeter(v){
+  const d=SIM.d;let ft=+String(v).toUpperCase().replace(/^FL\s*/,m=>'').replace(/[^\d]/g,'');
+  if(/^\s*FL/i.test(v)||(ft>0&&ft<=600))ft*=100;
+  if(!d||d.gpsAlt==null||d.gpsAlt<15000){sys('Enter your altimeter reading once you are above 15,000 ft.');return;}
+  if(!ft||Math.abs(ft-d.gpsAlt)>4000){sys('That reading is too far from the GPS altitude. Type what the altimeter shows, like 38000 or FL380.');return;}
+  SIM.altK=ft/d.gpsAlt;d.alt=altFix(d.gpsAlt);sys(`Got it. Altitude now matches your altimeter (GPS says ${Math.round(d.gpsAlt).toLocaleString()} ft).`);renderSim();
+}
 // Height above the airport. A pasted route has no airport elevation, so for departure we use the
 // altitude seen while taxiing; for arrival with no elevation we return null and the rules skip it.
 // Taxi helpers: you moved after the taxi clearance and have now stopped (at a hold-short line).
@@ -2550,17 +2569,22 @@ function simDeviations(){
     const over=(d.alt-A.ft)*A.dir;
     if(H('alt1',over>300&&!A.warned,8)){A.warned=true;S.pending=null;atc(S.cur,M(P_cs(),', check altitude, maintain ',P_alt(A.ft,TA(sideOfKey(S.cur))),'.'));return;}
     if(H('alt2',over>1000,5)){deviation(S.cur,'alt',M('Maintain ',P_alt(A.ft,TA(sideOfKey(S.cur))),'.'));A.dir=0;return;}
+    // given a new level but still sitting at the old one two minutes later
+    const short=(A.ft-d.alt)*A.dir;
+    if(A.dir&&!A.nudged&&Date.now()-(A.at||0)>120000&&H('alt3',short>1500&&Math.abs(d.vs||0)<300,10)){
+      A.nudged=true;A.at=Date.now();const lvl=P_alt(A.ft,TA(sideOfKey(S.cur)));
+      atc(S.cur,M(P_cs(),', ',A.dir<0?'expedite descent, descend ':'expedite climb, climb ',lvl,'.'));return;}
   }
 }
 // Remember the last altitude ATC assigned, so the altitude check knows what to compare to.
 function noteAssigned(t){
-  const m=String(t).match(/(?:climb|descend)(?: and)? maintain (FL ?\d{3}|[\d,]{4,6})|(?:climb|descend) to (FL ?\d{3}|[\d,]{4,6})|\bmaintain (FL ?\d{3}|[\d,]{4,6})/i);
+  const m=String(t).match(/(?:climb|descend)(?: and maintain| to| altitude| flight level)? (FL ?\d{3}|[\d,]{4,6})\b|(?:climb|descend) to (FL ?\d{3}|[\d,]{4,6})|\bmaintain (FL ?\d{3}|[\d,]{4,6})/i);
   if(!m)return;const v=(m[1]||m[2]||m[3]).toUpperCase();
   const ft=/^FL/.test(v)?+v.replace(/\D/g,'')*100:+v.replace(/,/g,'');
   if(!ft||ft<500)return;
   if(S.assigned&&S.assigned.ft===ft)return;   // same altitude repeated (e.g. "check altitude"): keep tracking it
   const now=SIM.d&&SIM.d.alt!=null?SIM.d.alt:null;
-  S.assigned={ft,dir:now==null?1:(ft>=now?1:-1),warned:false};
+  S.assigned={ft,dir:now==null?1:(ft>=now?1:-1),warned:false,at:Date.now()};
 }
 /* ---------- Centers by live position ----------
    FIR / center boundaries (data/firs.json, from the VATSpy Data Project, CC BY-SA 4.0).
@@ -2578,21 +2602,54 @@ function firFac(key,fir){
   const known=['ctr1','ctr2'].map(k=>F_ORIG&&F_ORIG[k]).find(f=>f&&f.name===fir.n);
   const region=regionFor(fir.i.length===4?fir.i:S.plan.arr.icao);
   const base=known||{freq:fmtFreq(fakeFreq('fir'+fir.i,fir.o?126.0:124.0,135.95)),est:true,src:''};
-  const f={key,name:fir.n,region,style:region.style,vIdx:4+(hash(fir.i)%5),freq:base.freq,est:base.est,src:base.src||'',pitch:[1,.93,1.07,.97,1.04][hash(fir.i)%5],fir:fir.i,oceanic:!!fir.o};
+  const f={key,name:fir.o?fir.n.replace(/ (Oceanic|Control|Center|Centre|Radio)$/,'')+' Radio':fir.n,region,style:region.style,vIdx:4+(hash(fir.i)%5),freq:base.freq,est:base.est,src:base.src||'',pitch:[1,.93,1.07,.97,1.04][hash(fir.i)%5],fir:fir.i,oceanic:!!fir.o};
   f.voice=pickVoice(langsFor(region),f.vIdx);f.piper=piperVoiceFor(region);return f;
 }
 let F_ORIG=null;
+// Oceanic position reports: each time you cross a 10 degree line of longitude over the ocean,
+// report where you are, when, your level, your estimate for the next line, and the one after.
+function llSay(lat,lon){return `${Math.abs(Math.round(lat))} ${lat>=0?'north':'south'} ${Math.abs(Math.round(lon))} ${lon<=0?'west':'east'}`;}
+function hhmm(ms){const d=new Date(ms);return String(d.getUTCHours()).padStart(2,'0')+String(d.getUTCMinutes()).padStart(2,'0');}
+function simPosReport(){
+  const d=SIM.d;if(!d||d.lon==null||S.phase!=='ctr')return false;
+  const b=Math.floor(d.lon/10),prev=SIM.lonB;SIM.lonB=b;
+  if(prev==null||prev===b)return false;
+  const fac=facOf(S.cur);if(!fac.oceanic||!S.f['in_'+S.cur]||S.pending)return false;
+  const west=b<prev,m=west?prev*10:b*10,step=west?-10:10;
+  const here={lat:d.lat,lon:d.lon},arr=apPos('arr'),gs=Math.max(d.gs||450,150),now=Date.now();
+  const est=[];
+  if(arr){const tot=hav(here,arr)/1852;let want=m+step,last=here;
+    for(let t=0.01;t<=1&&est.length<2;t+=0.01){const g=gcPoint(here,arr,t),q={lat:g[0],lon:g[1]};
+      if((west&&q.lon<=want)||(!west&&q.lon>=want)){est.push({lat:q.lat,lon:want,at:now+t*tot/gs*3600000});want+=step;}last=q;}}
+  const fl=P_alt(Math.round((d.alt||S.f.alt||S.plan.cruise)/1000)*1000,TA('dep')).t;
+  let t=`${fac.name}, ${S.csInfo.t}, position ${llSay(d.lat,m)} at ${hhmm(now)}, ${fl}`;
+  if(est[0])t+=`, estimating ${llSay(est[0].lat,est[0].lon)} at ${hhmm(est[0].at)}`;
+  if(est[1])t+=`, next ${llSay(est[1].lat,est[1].lon)}`;
+  S.posRep={t:t+'.'};sys('You crossed a 10 degree line of longitude. Time for a position report.');ui.render();return true;
+}
+// "Copilot does readbacks and check-ins": when you're tuned to the right controller and owe them
+// a check-in or a position report, the copilot makes the call once the frequency is quiet.
+function copilotCheckIn(){
+  if(!SET.copilotAuto||!S.fac||S.pending||S.ciBusy||['idle','done'].includes(S.phase))return;
+  const h=hint();if(!/with you|, position \d/.test(h)||!onFreq(S.cur))return;
+  if(S.ciLast===h&&Date.now()-S.ciAt<15000)return;
+  S.ciBusy=true;const k=S.cur;
+  Promise.resolve(speakQ).then(()=>setTimeout(()=>{S.ciBusy=false;
+    if(!SET.copilotAuto||S.pending||S.cur!==k||hint()!==h||!onFreq(k))return;
+    S.ciLast=h;S.ciAt=Date.now();pilotSay(h,{copilot:true});},HEADLESS?0:900));
+}
+setInterval(()=>{try{copilotCheckIn();}catch(e){}},1500);
 function curFir(){const d=SIM.d;return d?firAt(d.lat,d.lon):null;}
 function firHandoff(fir){
   const from=S.cur;
   if(from==='ctr2'){   // move the current center into ctr1 so ctr2 can be the next one
     S.fac.ctr1=Object.assign({},S.fac.ctr2,{key:'ctr1'});S.f.in_ctr1=S.f.in_ctr2;S.f.in_ctr2=false;S.cur='ctr1';
   }
-  S.fac.ctr2=firFac('ctr2',fir);S.f.in_ctr2=false;
+  S.fac.ctr2=firFac('ctr2',fir);S.f.in_ctr2=false;S.posRep=null;S.f.fromOcean=!!facOf('ctr1').oceanic&&!S.fac.ctr2.oceanic;
   const fromF=facOf('ctr1'),st=fromF.style,to=facOf('ctr2'),fq=P_freq(to.freq,st);
   const lead=to.oceanic&&!fromF.oceanic?'radar service terminated, ':(!to.oceanic&&fromF.oceanic?'':'');
   issue('ctr1',M(P_cs(),', ',lead,'contact ',to.name,' ',fq,'.'),[R_num(fq.v,fq.t,fq.s)],
-    ()=>{S.phase='ctr';S.cur='ctr2';sys(`Tune ${fq.t} and check in with ${to.name}.`+(to.oceanic?' Over the ocean there is no radar, so this controller mostly listens for your position reports.':''));renderChart();},
+    ()=>{S.phase='ctr';S.cur='ctr2';sys(`Tune ${fq.t} and check in with ${to.name}.`+(to.oceanic?' Over the ocean there is no radar. In the real plane this is an HF radio operator who passes your position reports to oceanic control.':''));renderChart();},
     `${to.name} ${fq.t}, ${S.csInfo.t}.`);
 }
 function simCenters(){
@@ -2600,7 +2657,7 @@ function simCenters(){
   const fir=curFir();if(!fir)return false;
   const cur=facOf(S.cur);
   if(!cur.fir){cur.fir=fir.i;if(cur.name!==fir.n){cur.firName=fir.n;}return false;}   // the first center: just remember where we are
-  const same=fir.i===cur.fir||fir.n===cur.name;
+  const same=fir.i===cur.fir||fir.n===cur.name||fir.n===cur.firName;
   SIM.firHold=same?0:(SIM.firHold||0)+1;
   if(SIM.firHold>=4){SIM.firHold=0;firHandoff(fir);return true;}
   return false;
@@ -2713,7 +2770,7 @@ function simRules(){
   if(SET.simAuto&&S.phase==='twr_out'&&S.f.tkoClr&&!S.f.tko&&S.pending&&S.pending.key==='twr'&&SIM.d.gs>60&&(simAgl('dep')>300||(SIM.d.vs||0)>500)){
     S.pending=null;S.f.tko=true;sys('You took off before reading back the takeoff clearance. Next time, read it back first.');}
   if(!SET.simAuto||S.pending)return;
-  if(simCenters()||simDescents()||gaVectors())return;
+  if(simCenters()||simPosReport()||simDescents()||gaVectors())return;
   const d=SIM.d;
   for(const [k,r] of Object.entries(SIM_RULES)){
     const e=EVENTS[k];if(!e)continue;
@@ -2725,13 +2782,14 @@ function simRules(){
 function renderSim(){
   if(HEADLESS)return;const bar=$('simBar');if(!bar)return;const d=SIM.d;
   bar.classList.toggle('ok',SIM.on&&SIM.ok);$('simBtn').textContent=SIM.on?'Disconnect':'Connect';$('simAuto').checked=!!SET.simAuto;
-  $('simVals').textContent=SIM.on&&SIM.ok&&d?`${Math.round(d.alt||0).toLocaleString()} ft  ${Math.round(d.gs||0)} kt  ${String(Math.round(((d.hdg??d.trk)||0)+360)%360).padStart(3,'0')}°  ${d.vs>0?'+':''}${Math.round((d.vs||0)/10)*10} fpm`:'';
+  $('simVals').textContent=SIM.on&&SIM.ok&&d?`${d.alt>=TA('dep')&&SIM.altK?'FL'+String(Math.round(d.alt/100)).padStart(3,'0'):Math.round(d.alt||0).toLocaleString()+' ft'}${SIM.altK?' (GPS '+Math.round(d.gpsAlt).toLocaleString()+')':' GPS'}  ${Math.round(d.gs||0)} kt  ${String(Math.round(((d.hdg??d.trk)||0)+360)%360).padStart(3,'0')}°  ${d.vs>0?'+':''}${Math.round((d.vs||0)/10)*10} fpm`:'';
   $('simNote').textContent=!SIM.on?'Live altitude and position from the FS2EFB add-on, through the Squawk sim bridge on your Mac.'
     :SIM.fails>2?'Can\'t reach the sim bridge. Start squawk_sim_bridge.py on this Mac, and if Chrome asks to access devices on your network, click Allow.'
     :!SIM.ok?'Bridge running. Waiting for FS2EFB data from your phone...':SET.simAuto?'Squawk makes position calls for you.':'Showing live data. Tap the calls yourself.';
 }
 async function simPoll(){
-  try{const r=await fetch(SIM_URL,{cache:'no-store'});const d=await r.json();SIM.fails=0;SIM.d=d;
+  try{const r=await fetch(SIM_URL,{cache:'no-store'});const d=await r.json();SIM.fails=0;if(d.alt!=null){d.gpsAlt=d.alt;d.alt=altFix(d.alt);}SIM.d=d;
+    if(d.ok&&d.gpsAlt>18000&&!SIM.altK&&!SIM.altTold&&Math.abs(d.vs||0)<200){SIM.altTold=true;sys('Squawk gets GPS altitude from FS2EFB, which can be up to 2,000 ft off your altimeter at cruise. Type what your altimeter reads in the SIM DATA box (like FL380) so altitude checks match.');}
     const was=SIM.ok;SIM.ok=!!d.ok;if(was!==SIM.ok)setTimeout(()=>ui.render(),0);
     if(SIM.ok&&d.gs!=null&&d.gs<40&&d.alt!=null&&['clr','gnd_out','twr_out'].includes(S.phase))SIM.depGround=d.alt;if(SIM.ok&&!was)sys('Live sim data connected.');if(!SIM.ok&&was)sys('Lost live sim data. Check FS2EFB and your phone.');
     simRules();mapUpdate();
@@ -3004,7 +3062,7 @@ function init(){
   $('xpdrBtn').onclick=()=>{unlockAudio();xpConnect();};renderXpdr();
   $('rpBtn').onclick=()=>{unlockAudio();rpConnect();};renderRp();
   $('mapBox').addEventListener('toggle',()=>{if($('mapBox').open)mapInit().then(()=>{if(MAP.map)MAP.map.invalidateSize();mapRoute();});});
-  $('simBtn').onclick=()=>{unlockAudio();simToggle();};$('simAuto').onchange=e=>{SET.simAuto=e.target.checked;saveSet();renderSim();};renderSim();
+  $('simBtn').onclick=()=>{unlockAudio();simToggle();};$('simAuto').onchange=e=>{SET.simAuto=e.target.checked;saveSet();renderSim();};$('simAlt').onchange=e=>{setAltimeter(e.target.value);e.target.value='';};renderSim();
   window.addEventListener('blur',()=>pttUp());
   wireKnob($('kOuter'),'outer');wireKnob($('kInner'),'inner');
   window.addEventListener('resize',fitPanels);fitPanels();
