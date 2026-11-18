@@ -2371,7 +2371,7 @@ function quickStart(where){
 }
 function startFlight(){
   clearTimers();
-  S.phase='clr';S.cur='clr';S.f={};S.talk={};S.greeted=new Set();S.assigned=null;SIM.dh={};SIM.altK=null;SIM.altOff=0;SIM.altTold=false;S.posRep=null;SIM.lonB=null;F_ORIG=null;SIM.firHold=0;S.taxiQ=null;S.arrTaxi=null;S.taxiTo='';S.pending=null;S.last=null;S.score={ok:0,miss:0,misses:[]};S.tips=new Set();
+  S.phase='clr';S.cur='clr';S.f={};S.talk={};S.greeted=new Set();S.assigned=null;SIM.dh={};SIM.altK=null;SIM.altOff=0;SIM.altManual=false;SIM.trimHold=0;SIM.altTold=false;S.posRep=null;SIM.lonB=null;F_ORIG=null;SIM.firHold=0;S.taxiQ=null;S.arrTaxi=null;S.taxiTo='';S.pending=null;S.last=null;S.score={ok:0,miss:0,misses:[]};S.tips=new Set();
   let sq;do{sq=String(1+Math.floor(Math.random()*6))+[0,0,0].map(()=>Math.floor(Math.random()*8)).join('');}while(/00$/.test(sq)||/^7[567]/.test(sq));
   S.squawk=sq;XP.warned={};xpSendAssigned();renderXpdr();
   const L='ABCDEFGHIJKLMNOPQRSTUVWXYZ';S.atis={dep:pick(L.split('')),arr:pick(L.split(''))};
@@ -2630,7 +2630,7 @@ function upaTick(d){
 }
 function isaPA(p){return p>=226.32?145366.45*(1-Math.pow(p/1013.25,0.190284)):36089.24+20805.8*Math.log(226.32/p);}
 function pressAlt(gpsFt){
-  const L=UPA.d;if(!L||gpsFt==null)return null;const h=gpsFt*0.3048;
+  const L=UPA.d;if(!L||gpsFt==null)return null;const hg=gpsFt*0.3048,h=hg*6371000/(6371000+hg);
   let i=0;while(i<L.length-2&&L[i+1].h<h)i++;const a=L[i],b=L[i+1];
   const lp=Math.log(a.p)+(h-a.h)/(b.h-a.h)*(Math.log(b.p)-Math.log(a.p));
   return isaPA(Math.exp(lp));
@@ -2648,6 +2648,19 @@ function altFix(g,d){
   if(a!=null)return Math.round(a+(SIM.altOff||0));
   if(!SIM.altK)return g;const w=Math.max(0,Math.min(1,(g-5000)/10000));return Math.round(g*(1+(SIM.altK-1)*w));
 }
+// The live weather Squawk downloads is never exactly the sim's weather, so up high it can still be a few
+// hundred feet off. Airliners hold their level exactly on autopilot, so after a minute level within
+// 700 ft of the level ATC gave you (or your filed cruise), Squawk trims itself to that level.
+function altAutoTrim(d){
+  if(!UPA.d||SIM.altManual||!d||d.gpsAlt==null||!S.plan||!['ctr','dep','app'].includes(S.phase))return;
+  const base=indAlt(d.gpsAlt,d);if(base==null||base<TA(nearSide(d)))return;
+  const tgt=(S.assigned&&S.assigned.ft)||S.f.alt||S.plan.cruise;if(!tgt||tgt<TA(nearSide(d)))return;
+  const cur=base+(SIM.altOff||0),off=tgt-base;
+  const ok=Math.abs(d.vs||0)<150&&Math.abs(off)<=700&&Math.abs(tgt-cur)>60;
+  SIM.trimHold=ok?(SIM.trimHold||0)+1:0;
+  if(SIM.trimHold>=60){SIM.trimHold=0;SIM.altOff=off;d.alt=altFix(d.gpsAlt,d);
+    sys(`Matched your altitude to ${P_alt(tgt,TA(nearSide(d))).t} (the weather Squawk downloads was ${Math.abs(Math.round(off/10)*10)} ft off the sim's). If your altimeter shows something else, type it in the Altimeter box.`);}
+}
 function altNote(t,ok){const n=$('simAltNote');if(n){n.textContent=t;n.className='xaltnote'+(ok?' ok':'');}}
 function setAltimeter(v){
   const d=SIM.d;v=String(v||'').trim();if(!v)return;
@@ -2657,7 +2670,7 @@ function setAltimeter(v){
   const base=indAlt(d.gpsAlt,d);
   if(base!=null){
     const off=ft-base;if(Math.abs(off)>2500){altNote(`That is ${Math.round(Math.abs(off)).toLocaleString()} ft off. Check the number.`);return;}
-    SIM.altOff=off;
+    SIM.altOff=off;SIM.altManual=true;
   }else{
     if(d.gpsAlt<10000){altNote('Above 10,000 ft, please (no weather data yet).');return;}
     if(Math.abs(ft-d.gpsAlt)>4000){altNote('Too far from GPS. Check the number.');return;}
@@ -2951,7 +2964,7 @@ function renderSim(){
     :!SIM.ok?'Bridge running. Waiting for FS2EFB data from your phone...':SET.simAuto?'Squawk makes position calls for you.':'Showing live data. Tap the calls yourself.';
 }
 async function simPoll(){
-  try{const r=await fetch(SIM_URL,{cache:'no-store'});const d=await r.json();SIM.fails=0;if(d.ok)upaTick(d);if(d.alt!=null){d.gpsAlt=d.alt;d.alt=altFix(d.alt,d);}SIM.d=d;
+  try{const r=await fetch(SIM_URL,{cache:'no-store'});const d=await r.json();SIM.fails=0;if(d.ok)upaTick(d);if(d.alt!=null){d.gpsAlt=d.alt;d.alt=altFix(d.alt,d);}SIM.d=d;if(d.ok)altAutoTrim(d);
     if(d.ok&&d.gpsAlt>18000&&UPA.failed&&!UPA.d&&!SIM.altK&&!SIM.altTold&&Math.abs(d.vs||0)<200){SIM.altTold=true;sys('Squawk could not get upper-air weather, so it is using GPS altitude, which can be up to 2,000 ft off your altimeter at cruise. Type what your altimeter reads in the Altimeter box (like FL380).');}
     const was=SIM.ok;SIM.ok=!!d.ok;if(was!==SIM.ok)setTimeout(()=>ui.render(),0);
     if(SIM.ok&&d.gs!=null&&d.gs<40&&d.alt!=null&&['clr','gnd_out','twr_out'].includes(S.phase))SIM.depGround=d.alt;if(SIM.ok&&!was)sys('Live sim data connected.');if(!SIM.ok&&was)sys('Lost live sim data. Check FS2EFB and your phone.');
