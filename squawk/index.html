@@ -267,9 +267,9 @@ td input{padding:6px 8px}
         <label style="display:flex;gap:8px;align-items:center;margin:4px 0 0"><input id="s_ai" type="checkbox" style="width:auto"> AI controller answers questions and unusual calls</label>
         <label style="display:flex;gap:8px;align-items:center;margin:4px 0 0"><input id="s_gpu" type="checkbox" style="width:auto"> Use graphics card for Kokoro voices (faster, but can freeze some laptops)</label></div>
     </div>
-    <details style="margin-top:8px" id="clBox"><summary>AI controller (Claude API key)</summary>
-      <p class="muted">With a key, ATC can answer anything: "what runway am I using again?", "how far to the airport?", "any reports of turbulence?". The normal calls still run the fast built-in way; Claude only gets questions and calls the built-in ATC doesn't understand. Get a key at console.anthropic.com (needs billing). It stays on this device only and never goes into the code on GitHub.</p>
-      <div class="grid"><div><label for="cl_key">Claude API key</label><input id="cl_key" type="password" autocomplete="off" placeholder="sk-ant-..."></div>
+    <details style="margin-top:8px" id="clBox"><summary>AI controller (free Gemini key or Claude key)</summary>
+      <p class="muted">With a key, ATC can answer anything: "what runway am I using again?", "how far to the airport?", "any reports of turbulence?". The normal calls still run the fast built-in way; Claude only gets questions and calls the built-in ATC doesn't understand. Free: get a Gemini key at aistudio.google.com (Get API key, no billing needed). Or paste a Claude key from console.anthropic.com (paid). Squawk tells them apart by how the key starts. It stays on this device only and never goes into the code on GitHub.</p>
+      <div class="grid"><div><label for="cl_key">AI key (Gemini or Claude)</label><input id="cl_key" type="password" autocomplete="off" placeholder="AIza... or sk-ant-..."></div>
       <div><label>&nbsp;</label><button type="button" id="cl_test">Test key</button></div></div>
       <div class="muted" id="cl_note" style="font-size:12px;margin-top:4px"></div>
     </details>
@@ -2255,9 +2255,26 @@ function aiContext(){
     `Recent radio (oldest first):\n${AIH.join('\n')}`
   ].filter(Boolean).join('\n');
 }
+// Gemini keys start with "AIza" (free tier at aistudio.google.com). Anything else is treated as a Claude key.
+function aiProvider(){return /^AIza/.test(CL.key)?'gemini':'claude';}
+const GEM_MODELS=['gemini-flash-lite-latest','gemini-flash-latest'];
+async function askGemini(sys,user,ctl){
+  let last;
+  for(const m of GEM_MODELS){
+    const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`,{method:'POST',signal:ctl.signal,headers:{'content-type':'application/json','x-goog-api-key':CL.key},
+      body:JSON.stringify({systemInstruction:{parts:[{text:sys}]},contents:[{role:'user',parts:[{text:user}]}],generationConfig:{maxOutputTokens:400,temperature:0.4}})});
+    const j=await r.json().catch(()=>({}));
+    if(r.ok){const c=j.candidates&&j.candidates[0];return ((c&&c.content&&c.content.parts)||[]).map(p=>p.text||'').join('');}
+    last=new Error((j.error&&j.error.message)||('HTTP '+r.status));
+    if(r.status===429)throw new Error('Free Gemini limit reached for now. It resets soon.');
+    if(r.status!==404&&r.status!==400)throw last;
+  }
+  throw last;
+}
 async function askClaude(sys,user){
   const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),9000);
   try{
+    if(aiProvider()==='gemini')return await askGemini(sys,user,ctl);
     const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',signal:ctl.signal,headers:{'content-type':'application/json','x-api-key':CL.key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
       body:JSON.stringify({model:CL.model,max_tokens:220,system:sys,messages:[{role:'user',content:user}]})});
     const j=await r.json();if(!r.ok)throw new Error((j.error&&j.error.message)||('HTTP '+r.status));
@@ -2284,7 +2301,7 @@ Reply with ONLY JSON: {"text":"reply with numbers as digits","spoken":"the same 
     if(S.pending&&!S.assigned&&keepA)S.assigned=keepA;
     ui.render();return true;
   }catch(e){
-    if(!S.clWarned){S.clWarned=true;sys('AI controller error: '+(e.name==='AbortError'?'Claude took too long.':e.message)+' Using the built-in ATC.');}
+    if(!S.clWarned){S.clWarned=true;sys('AI controller error: '+(e.name==='AbortError'?'the AI took too long.':e.message)+' Using the built-in ATC.');}
     return false;
   }finally{ui.thinking(false);CL.busy=false;}
 }
@@ -3388,7 +3405,7 @@ function init(){
   $('cl_key').value=CL.key;$('cl_key').onchange=e=>{CL.key=e.target.value.trim();saveCl();$('cl_note').textContent=CL.key?'Saved on this device.':'';};
   $('cl_test').onclick=async()=>{CL.key=$('cl_key').value.trim();saveCl();if(!CL.key){$('cl_note').textContent='Paste a key first.';return;}
     $('cl_note').textContent='Testing...';const t0=Date.now();
-    try{await askClaude('Reply with the single word: roger','radio check');$('cl_note').textContent=`Works. Claude answered in ${((Date.now()-t0)/1000).toFixed(1)} s.`;}
+    try{await askClaude('Reply with the single word: roger','radio check');$('cl_note').textContent=`Works. ${aiProvider()==='gemini'?'Gemini':'Claude'} answered in ${((Date.now()-t0)/1000).toFixed(1)} s.`;}
     catch(e){$('cl_note').textContent='Did not work: '+e.message;}};
   // voices
   initLog();
