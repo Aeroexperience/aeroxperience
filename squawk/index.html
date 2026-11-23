@@ -107,6 +107,7 @@ a{color:var(--blue)}
 .msg.dev{border-left:3px solid #ff6b6b}
 .darktiles{filter:invert(1) hue-rotate(180deg) brightness(.8) contrast(.9) saturate(.5)}
 .maptip{background:#111a;color:#cfe;border:0;box-shadow:none;font-size:11px;padding:0 3px}
+.maptag{white-space:nowrap;font-weight:600;width:auto!important;height:auto!important}
 .want.ok{color:var(--green)}
 #fchart td{cursor:pointer}
 .com{display:flex;align-items:center;gap:12px;background:#05090c;border:1px solid var(--line);border-radius:14px;padding:10px 14px}
@@ -260,11 +261,18 @@ td input{padding:6px 8px}
         <div style="display:flex;gap:6px"><button type="button" id="pttBind" style="flex:1">Spacebar</button><button type="button" id="pttReset" style="width:auto">Reset</button></div>
         <div class="muted" id="pttBindNote" style="font-size:12px;margin-top:4px">Tap the button, then press a key, a foot pedal, or a button on a controller plugged into this device.</div></div>
       <div><label for="s_rate">Controller speed</label><input id="s_rate" type="range" min="0.8" max="1.35" step="0.05"></div>
+      <div><label for="s_trafVol">Other traffic volume</label><input id="s_trafVol" type="range" min="0" max="1" step="0.05"></div>
       <div><label>&nbsp;</label>
         <label style="display:flex;gap:8px;align-items:center;margin:0"><input id="s_radio" type="checkbox" style="width:auto"> Radio static</label>
-        <label style="display:flex;gap:8px;align-items:center;margin:4px 0 0"><input id="s_ai" type="checkbox" style="width:auto"> Use Claude for unusual requests</label>
+        <label style="display:flex;gap:8px;align-items:center;margin:4px 0 0"><input id="s_ai" type="checkbox" style="width:auto"> AI controller answers questions and unusual calls</label>
         <label style="display:flex;gap:8px;align-items:center;margin:4px 0 0"><input id="s_gpu" type="checkbox" style="width:auto"> Use graphics card for Kokoro voices (faster, but can freeze some laptops)</label></div>
     </div>
+    <details style="margin-top:8px" id="clBox"><summary>AI controller (Claude API key)</summary>
+      <p class="muted">With a key, ATC can answer anything: "what runway am I using again?", "how far to the airport?", "any reports of turbulence?". The normal calls still run the fast built-in way; Claude only gets questions and calls the built-in ATC doesn't understand. Get a key at console.anthropic.com (needs billing). It stays on this device only and never goes into the code on GitHub.</p>
+      <div class="grid"><div><label for="cl_key">Claude API key</label><input id="cl_key" type="password" autocomplete="off" placeholder="sk-ant-..."></div>
+      <div><label>&nbsp;</label><button type="button" id="cl_test">Test key</button></div></div>
+      <div class="muted" id="cl_note" style="font-size:12px;margin-top:4px"></div>
+    </details>
     <details style="margin-top:8px"><summary>Azure voices (optional, most human)</summary>
       <p class="muted">Paste your Azure Speech key and region. They stay on this device only and never go into the code on GitHub. Free tier: 500,000 characters a month, roughly 100 flights.</p>
       <div class="grid"><div><label for="az_key">Azure Speech key</label><input id="az_key" type="password" autocomplete="off" placeholder="paste key"></div>
@@ -696,13 +704,15 @@ function numEq(a,b){const lz=x=>x.replace(/^0+(?=\d)/,'');const d=x=>lz(x.replac
 function hasNum(set,v){for(const c of set)if(numEq(c,String(v)))return true;return false;}
 
 /* ================= state ================= */
-const DEF={startAt:'gate',copilot:true,copilotAuto:false,autoTune:false,simAuto:true,traffic:'realistic',vatsim:true,showTraffic:true,engine:'auto',accent:'local',rate:1.0,strict:'strict',ai:true,radio:true,buzz:'real',gpu:false,logView:'compact',pttKey:'Space',pttPad:null,sbUser:''};
+const DEF={startAt:'gate',copilot:true,trafVol:0.6,copilotAuto:false,autoTune:false,simAuto:true,traffic:'realistic',vatsim:true,showTraffic:true,engine:'auto',accent:'local',rate:1.0,strict:'strict',ai:true,radio:true,buzz:'real',gpu:false,logView:'compact',pttKey:'Space',pttPad:null,sbUser:''};
 let SET=Object.assign({},DEF);
 try{Object.assign(SET,JSON.parse(localStorage.getItem('squawk.settings')||'{}'));}catch(e){}
 function saveSet(){try{localStorage.setItem('squawk.settings',JSON.stringify(SET));}catch(e){}}
 
 const S={plan:null,fac:null,phase:'idle',cur:null,pending:null,last:null,f:{},score:{ok:0,miss:0,misses:[]},tips:new Set(),csInfo:null,squawk:'',atis:{dep:'A',arr:'A'},timers:[]};
 const CAP={dict:null,tts:null,sample:null,mcp:null};
+// reply timing: when you let go of push-to-talk, when Squawk had your words, when ATC's voice started
+const TIME={rel:0,said:0,shown:true,reply:0};
 const PHASES=[['clr','Clearance'],['gnd_out','Ground'],['twr_out','Tower'],['dep','Departure'],['ctr','Center'],['app','Approach'],['twr_in','Tower'],['gnd_in','Ground'],['done','Parked']];
 
 /* ================= SimBrief ================= */
@@ -736,6 +746,7 @@ function fromSimbrief(j){
     dep:ap(o,'trans_alt'),arr:ap(d,'trans_level'),
     sid,star,cruise:+g.initial_altitude||+g.cruise_altitude||35000,
     route:g.route||'',firstFix:enroute[0]?enroute[0].ident:'',firs,
+    routeFixes:fixes.filter(f=>f.pos_lat!=null&&f.type!=='apt'&&!/^(TOC|TOD|T\/C|T\/D)$/i.test(f.ident||'')).map(f=>({id:String(f.ident).toUpperCase(),lat:+f.pos_lat,lon:+f.pos_long,via:String(f.via_airway||''),ss:String(f.is_sid_star)==='1'})),
     starFixes:star?fixes.filter(f=>f.via_airway===star&&f.pos_lat!=null).map(f=>({id:String(f.ident).toUpperCase(),lat:+f.pos_lat,lon:+f.pos_long,alt:+f.altitude_feet||0})):[]
   };
 }
@@ -1023,8 +1034,7 @@ function isAtis(f){return !!f&&(f.key==='datis'||f.key==='aatis');}
 function rateFor(f){   // everyone about 10% quicker, ATIS 30% more; local controllers talk fast, busy US towers fastest
   if(isAtis(f))return SET.rate*1.1*1.3;
   const k=f&&f.key||'',faa=f&&f.style==='faa';
-  let b=/^(twr|atwr|gnd|agnd|clr)$/.test(k)?(faa?1.15:1.07):/^(dep|app)$/.test(k)?1.06:1;
-  if(b>1&&TR.level[sideOfKey(k)]>=3)b+=0.05;
+  let b=/^(twr|atwr|gnd|agnd|clr)$/.test(k)?(faa?1.05:1.03):/^(dep|app)$/.test(k)?1.02:1;
   return SET.rate*1.1*b;
 }
 let KGEN=Promise.resolve();
@@ -1116,9 +1126,11 @@ async function playAudio(blob,f,fixedRate,noClick){
       out.connect(g);out=g;
       const nb=actx.createBuffer(1,actx.sampleRate*2,actx.sampleRate);const d=nb.getChannelData(0);
       for(let i=0;i<d.length;i++){d[i]=Math.random()*2-1;if(P.crackle&&Math.random()<0.0006)d[i]*=6;}
-      hiss=actx.createBufferSource();hiss.buffer=nb;hiss.loop=true;const hb=bq('bandpass',2000,0.5);const hg=actx.createGain();hg.gain.value=P.hiss;
+      hiss=actx.createBufferSource();hiss.buffer=nb;hiss.loop=true;const hb=bq('bandpass',2000,0.5);const hg=actx.createGain();hg.gain.value=P.hiss*(TX.vol??1);
       hiss.connect(hb);hb.connect(hg);hg.connect(actx.destination);hiss.start();
     }
+    {const vg=actx.createGain();vg.gain.value=TX.vol??1;out.connect(vg);out=vg;}
+    if(!TIME.shown&&TIME.said&&Date.now()-TIME.said<15000){TIME.shown=true;TIME.reply=Date.now()-TIME.said;showTiming();}
     out.connect(actx.destination);TX.src=src;src.onended=()=>{if(hiss){try{hiss.stop();}catch(e){}}if(TX.src===src)TX.src=null;res();};if(!noClick)radioClick();src.start();
   });
 }
@@ -1178,7 +1190,7 @@ function sayAloudBasic(f,text,claudeFirst){
     }else if(synth&&VOICES.length){
       radioClick();const u=new SpeechSynthesisUtterance(text);
       if(f.voice){u.voice=f.voice;u.lang=f.voice.lang;}
-      u.rate=rateFor(f);u.pitch=f.pitch||1;
+      u.rate=rateFor(f);u.pitch=f.pitch||1;u.volume=TX.vol??1;
       let done=false;const fin=()=>{if(done)return;done=true;radioClick(true);setTimeout(res,300);};
       u.onend=fin;u.onerror=fin;setTimeout(fin,5000+text.length*120/SET.rate);
       synth.speak(u);
@@ -1717,6 +1729,7 @@ function enqueueSpeech(f,text,traffic){
       const nx=SQ[SQ.indexOf(group[group.length-1])+1];if(nx&&!nx.prep&&nx.gen===job.gen)nx.prep=prepareAudio(nx.f,nx.text);
       let a=null;try{a=await job.prep;}catch(e){}
       if(job.gen!==(TX.gen||0)||job.cancel)return;
+      TX.vol=job.traffic?(SET.trafVol??0.6):1;if(TX.vol<=0.01)return;
       await playPrepared(f,piece,a,idx===0,idx===group.length-1);
     }).catch(()=>{}).then(()=>{const i=SQ.indexOf(job);if(i>=0)SQ.splice(i,1);TX.n--;TX.last=Date.now();});
     last=speakQ;
@@ -1755,7 +1768,7 @@ function trafficLabel(side){const lv=trafficLevel(S.plan[side].icao,TAXI[side]);
 /* ================= core radio ================= */
 function facOf(key){return S.fac[key];}
 function atc(key,msg){
-  const f=facOf(key);S.last={key,msg};noteAssigned(msg.t);S.talk=S.talk||{};S.talk[key]=(S.talk[key]||0)+1;
+  const f=facOf(key);S.last={key,msg};noteAssigned(msg.t);aiLog(f.name,msg.t);S.talk=S.talk||{};S.talk[key]=(S.talk[key]||0)+1;
   if(!onFreq(key)){sys(`You missed a call from ${f.name}. Your talk radio (VHF ${RADIO.mic}) is on ${fshow(micFreq())}, not ${fshow(f.freq)}.`);return speakQ;}
   ui.atc(f,msg);
   return enqueueSpeech(f,msg.s);
@@ -1858,7 +1871,7 @@ function copilotSays(text){
 function pilotSay(text,opts){
   text=String(text||'').trim();if(!text||!S.fac)return;
   S.lastPilot=Date.now();dropTraffic();
-  ui.pilot(text);
+  ui.pilot(text);aiLog('Pilot',text);TIME.said=Date.now();TIME.shown=false;
   if(opts&&opts.copilot)copilotSays(text);
   const n=normText(text);
   if(RADIO.check){
@@ -1877,6 +1890,7 @@ function pilotSay(text,opts){
   if(RX.radio.test(n))return atc(S.cur,M(P_cs(),', ',fac.name,', ',fac.style==='faa'?'loud and clear.':{t:'readability 5.',s:'readability fife.'}));
   if(RX.again.test(n)&&S.last)return atc(S.last.key,S.last.msg);
   if(RX.mayday.test(n))return emergency(n);
+  if(!S.f.emergency&&aiReady()&&!(opts&&opts.copilot)&&looksLikeQuestion(text.toLowerCase(),n)){aiAnswer(text,'a question').then(ok=>{if(!ok)unknown(n,text);});return;}
   if(S.f.emergency)return emergencyFollow();
   if(S.pending){
     if(RX.unable.test(n)){S.pending=null;atc(S.cur,M(P_cs(),', roger. Advise when able.'));ui.render();return;}
@@ -2216,22 +2230,66 @@ function emergencyFollow(){
   ui.render();
 }
 
+/* ---------- AI controller ----------
+   The built-in ATC handles normal calls (fast, no internet needed). Questions and calls it doesn't
+   understand go to Claude with everything Squawk knows about the flight, and the answer is spoken
+   by the controller you're talking to. The key lives in this browser only (localStorage). */
+const CL={key:'',model:'claude-haiku-5-5',busy:false};
+try{CL.key=JSON.parse(localStorage.getItem('squawk.claude')||'{}').key||'';}catch(e){}
+function saveCl(){try{localStorage.setItem('squawk.claude',JSON.stringify({key:CL.key}));}catch(e){}}
+function aiReady(){return SET.ai&&(!!CL.key||!!CAP.sample);}
+const AIH=[];function aiLog(who,t){AIH.push(who+': '+t);if(AIH.length>12)AIH.shift();}
+const QRX=/^(what|whats|which|where|when|why|how|who|can|could|would|will|should|do|does|did|is|are|am|any|remind)\b|\?$|\b(remind me|again\?)/;
+function looksLikeQuestion(raw,n){return !/^say again/.test(n)&&(QRX.test(n)||/\?\s*$/.test(raw));}
+function aiContext(){
+  const p=S.plan,f=facOf(S.cur),d=SIM.ok?SIM.d:null,A=S.assigned;
+  const md=side=>{const m=metar(side);return m&&m.raw?m.raw:'not available';};
+  const PH={clr:'at the gate, getting IFR clearance',gnd_out:'on the ground at departure, pushback/taxi',twr_out:'holding short or on the departure runway',dep:'just airborne, climbing out with departure',ctr:S.f.desc?'descending toward the arrival airport with center':'enroute with center',app:'with approach, being vectored for the approach',twr_in:'on final with the arrival tower',gnd_in:'landed, taxiing to the gate',done:'at the gate, flight over'};
+  return [
+    `You are ${f.name}${f.oceanic?' (an HF radio operator relaying to oceanic control, no radar)':''}. Phraseology: ${f.style==='faa'?'United States FAA':'ICAO'}.`,
+    `Aircraft: callsign ${S.csInfo.t} (spoken "${S.csInfo.s}"), type ${p.type||'unknown'}.`,
+    `Flight plan: ${p.dep.icao} (${p.dep.name||''}) runway ${p.dep.rwy}${p.sid?', SID '+p.sid:''} to ${p.arr.icao} (${p.arr.name||''}) runway ${p.arr.rwy}${p.star?', STAR '+p.star:''}. Filed cruise ${P_alt(p.cruise,TA('dep')).t}. Route: ${p.route||'direct'}. Squawk code ${S.squawk||'not assigned'}.`,
+    `Departure weather: ${md('dep')}. ATIS ${S.atis.dep||'-'}. Arrival weather: ${md('arr')}. ATIS ${S.atis.arr||'-'}. Approach in use: ${apTypeT()} runway ${p.arr.rwy}.`,
+    `Right now: ${PH[S.phase]||S.phase}. Assigned altitude: ${A?P_alt(A.ft,TA(S.f.desc?'arr':'dep')).t:'none'}.`+(d?` Live data: ${Math.round(d.alt)} ft, ${Math.round(d.gs)} kt ground speed, track ${Math.round(d.trk||0)}, ${simDist('arr')!=null?Math.round(simDist('arr'))+' nm from '+p.arr.icao:''}.`:''),
+    S.pending?`You are waiting for the pilot to read back: "${S.pending.rb}".`:'',
+    `Recent radio (oldest first):\n${AIH.join('\n')}`
+  ].filter(Boolean).join('\n');
+}
+async function askClaude(sys,user){
+  const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),9000);
+  try{
+    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',signal:ctl.signal,headers:{'content-type':'application/json','x-api-key':CL.key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:CL.model,max_tokens:220,system:sys,messages:[{role:'user',content:user}]})});
+    const j=await r.json();if(!r.ok)throw new Error((j.error&&j.error.message)||('HTTP '+r.status));
+    return (j.content||[]).map(c=>c.text||'').join('');
+  }finally{clearTimeout(t);}
+}
+async function aiAnswer(text,why){
+  if(!aiReady()||CL.busy)return false;
+  const f=facOf(S.cur);
+  const sysP=`You are a real, busy air traffic controller talking on the radio in a flight simulator. Stay in character. Use ONLY the facts below; never invent runways, frequencies, or clearances that contradict them.
+${aiContext()}
+Rules: answer in one or two short radio transmissions, like a real controller. Start with the callsign (you may shorten it the way US controllers do). Answer the pilot's actual question directly (runway, weather, altimeter, distance, frequency, what to expect, traffic, ride reports, etc.). You may approve or deny reasonable requests within your authority (direct to a fix on the route, a different altitude, a deviation for weather) the way a real controller would; otherwise "unable" with a short reason. Don't hand the pilot to another controller. If the pilot is not talking about flying, say "say again" or keep it short and professional. No emojis.
+Reply with ONLY JSON: {"text":"reply with numbers as digits","spoken":"the same reply with numbers as radio words: digits one at a time, 9 as niner, flight levels as 'flight level three four zero', altitudes like 'one one thousand'"}`;
+  try{
+    ui.thinking(true);CL.busy=true;
+    let out;
+    if(CL.key)out=await askClaude(sysP,`Pilot (${why}): "${text}"`);
+    else{const r=await CAP.sample.json(sysP+'\nPilot: "'+text+'"',{modelTier:'quick'});out=JSON.stringify(r||{});}
+    const m=String(out).match(/\{[\s\S]*\}/);const r=m?JSON.parse(m[0]):null;
+    if(!r||!r.text)return false;
+    const keep=S.last,keepA=S.assigned;
+    atc(S.cur,{t:String(r.text),s:spokenClean(String(r.spoken||r.text))});
+    if(S.pending&&keep)S.last=keep;   // "say again" still repeats the clearance you owe a readback for
+    if(S.pending&&!S.assigned&&keepA)S.assigned=keepA;
+    ui.render();return true;
+  }catch(e){
+    if(!S.clWarned){S.clWarned=true;sys('AI controller error: '+(e.name==='AbortError'?'Claude took too long.':e.message)+' Using the built-in ATC.');}
+    return false;
+  }finally{ui.thinking(false);CL.busy=false;}
+}
 async function unknown(n,text){
-  if(SET.ai&&CAP.sample){
-    const f=facOf(S.cur);
-    const prompt=`You are an air traffic controller in a flight-sim radio training app. You are ${f.name} (${f.style==='faa'?'United States FAA':'ICAO'} phraseology).
-Flight: ${S.csInfo.t} (say it as "${S.csInfo.s}"), ${S.plan.type||'aircraft'} from ${S.plan.dep.icao} runway ${S.plan.dep.rwy} to ${S.plan.arr.icao} runway ${S.plan.arr.rwy}, cruise ${S.plan.cruise} ft, SID ${S.plan.sid||'none'}, STAR ${S.plan.star||'none'}.
-Current flight phase: ${S.phase}. Last ATC transmission: "${S.last?S.last.msg.t:'none'}".
-The pilot just said: "${text}"
-Reply as the controller in one or two short sentences of correct radio phraseology. Start with the callsign. Do not hand the pilot to another controller and do not change their clearance unless they asked. If the call doesn't make sense for you, tell them to say again.
-Return only JSON: {"text": "the reply with numbers as digits", "spoken": "the same reply with every number written out as spoken words, digits read one at a time like 'one two four point five', and 9 said as 'niner'"}`;
-    try{
-      ui.thinking(true);
-      const r=await CAP.sample.json(prompt,{modelTier:'quick'});
-      ui.thinking(false);
-      if(r&&r.text){atc(S.cur,{t:String(r.text),s:spokenClean(String(r.spoken||r.text))});ui.render();return;}
-    }catch(e){ui.thinking(false);}
-  }
+  if(await aiAnswer(text,'a call the built-in ATC did not understand'))return;
   atc(S.cur,M(P_cs(),', say again.'));
   sys('ATC didn\'t understand that. Try the suggested call below.');
   ui.render();
@@ -2505,34 +2563,47 @@ function setupDict(){
 }
 function micNote(){if(HEADLESS)return;$('micNote').textContent=micAvailable()?'Hold the button (or '+(SET.pttPad?'your '+bindLabel().replace(/^C/,'c'):'the '+bindLabel()+' key')+') while you talk, and let go to send. Just like the push-to-talk switch on a yoke.':'Voice input isn\'t available in this browser. Type your call or tap "Send this call". For voice, open this page in Chrome.';}
 // Push to talk: hold the button (or spacebar) to transmit, release to send.
+function micSend(){
+  MIC.sent=true;MIC.on=false;const h=((MIC.keep||'')+' '+(MIC.tmp||MIC.heard||'')).trim();MIC.heard='';MIC.tmp='';MIC.keep='';$('partial').textContent='';radioClick(true);if(h)pilotSay(h);renderFlight();
+}
 function pttDown(){
   if(MIC.on)return;
   unlockAudio();radioClick();
   speechFlush();
-  MIC.heard='';MIC.tmp='';MIC.held=true;MIC.at=Date.now();
+  MIC.heard='';MIC.tmp='';MIC.held=true;MIC.sent=false;MIC.at=Date.now();
   if(CAP.dict){
     CAP.dict.start().then(()=>{if(!MIC.held)CAP.dict.stop().catch(()=>{});}).catch(e=>{MIC.on=false;renderFlight();if(e&&e.code==='not_granted'){MIC.blocked=true;micNote();}});
     MIC.on=true;renderFlight();return;
   }
   if(SR&&!MIC.blocked){
     const r=new SR();r.lang='en-US';r.interimResults=true;r.continuous=true;MIC.rec=r;
-    r.onresult=e=>{let fin='',int='';for(let i=0;i<e.results.length;i++){if(e.results[i].isFinal)fin+=e.results[i][0].transcript+' ';else int+=e.results[i][0].transcript;}MIC.heard=fin.trim();MIC.tmp=(fin+int).trim();$('partial').textContent=MIC.tmp;};
+    r.onresult=e=>{if(MIC.rec!==r||MIC.sent)return;let fin='',int='';for(let i=0;i<e.results.length;i++){if(e.results[i].isFinal)fin+=e.results[i][0].transcript+' ';else int+=e.results[i][0].transcript;}MIC.heard=fin.trim();MIC.tmp=(fin+int).trim();$('partial').textContent=MIC.tmp;};
     r.onerror=e=>{if(/not-allowed|service-not-allowed/.test(e.error)){MIC.blocked=true;micNote();sys('Microphone is blocked here. Type your call instead.');}};
     // Some browsers stop listening on their own after a pause; restart while the button is still held.
-    r.onend=()=>{if(MIC.held&&!MIC.blocked){try{MIC.keep=(MIC.keep?MIC.keep+' ':'')+(MIC.tmp||'');MIC.tmp='';r.start();return;}catch(e){}}
-      MIC.on=false;const h=((MIC.keep||'')+' '+(MIC.tmp||MIC.heard||'')).trim();MIC.heard='';MIC.tmp='';MIC.keep='';$('partial').textContent='';radioClick(true);if(h)pilotSay(h);renderFlight();};
+    r.onend=()=>{if(MIC.rec!==r)return;if(MIC.held&&!MIC.blocked){try{MIC.keep=(MIC.keep?MIC.keep+' ':'')+(MIC.tmp||'');MIC.tmp='';r.start();return;}catch(e){}}
+      if(!MIC.sent)micSend();};
     try{r.start();MIC.on=true;}catch(e){MIC.blocked=true;micNote();}
     renderFlight();return;
   }
   MIC.held=false;sys('Voice input isn\'t available here. Type your call below.');
+}
+function showTiming(){
+  if(HEADLESS)return;const el=$('partial');if(!el)return;
+  const heard=TIME.rel&&TIME.said>TIME.rel&&TIME.said-TIME.rel<8000?(TIME.said-TIME.rel)/1000:null;
+  el.textContent=(heard!=null?`Heard you in ${heard.toFixed(1)} s, `:'')+`ATC started talking ${(TIME.reply/1000).toFixed(1)} s later.`;
+  clearTimeout(TIME.tm);TIME.tm=setTimeout(()=>{if(el.textContent.startsWith('Heard')||el.textContent.startsWith('ATC started'))el.textContent='';},7000);
 }
 function pttUp(){
   if(!MIC.held)return;MIC.held=false;
   // keep the mic open a moment so the last word isn't clipped
   const wait=Math.max(0,450-(Date.now()-MIC.at));
   setTimeout(()=>{
+    TIME.rel=Date.now();
     if(CAP.dict){CAP.dict.stop().catch(()=>{});}
-    else if(MIC.rec){try{MIC.rec.stop();}catch(e){}}
+    else if(MIC.rec){try{MIC.rec.stop();}catch(e){}
+      // The browser can take a second or more to send its "final" words after you let go.
+      // If it hasn't in 350 ms, go with what it already heard.
+      const r=MIC.rec;setTimeout(()=>{if(MIC.rec===r&&MIC.on&&!MIC.sent)micSend();},350);}
   },Math.max(wait,250));
 }
 // Squawk transponder panel (3D-printed 777 ATC panel) over Bluetooth, using the Nordic UART service.
@@ -2987,6 +3058,26 @@ function mapRoute(){
   if(!MAP.map||!S.plan)return;const L=MAP.L,a=apPos('dep')||S.plan.dep,b=apPos('arr')||S.plan.arr;
   if(MAP.route)MAP.route.remove();
   if(a.lat==null||b.lat==null||isNaN(a.lat)||isNaN(b.lat))return;
+  const F=(S.plan.routeFixes||[]).filter(f=>!isNaN(f.lat)&&!isNaN(f.lon));
+  if(F.length>=2){   // the real route from SimBrief: SID in green, airways in blue, STAR in orange
+    const sid=S.plan.sid,star=S.plan.star,lay=[],seg=(pts,col,dash)=>lay.push(L.polyline(pts,{color:col,weight:3,opacity:0.9,dashArray:dash||null}));
+    const all=[[a.lat,a.lon],...F.map(f=>[f.lat,f.lon]),[b.lat,b.lon]];
+    const iS=F.findIndex(f=>f.via!==sid),iE=star?F.findIndex(f=>f.via===star):-1;
+    const sEnd=sid&&iS>0?iS:0,eStart=iE>=0?iE:F.length;
+    if(sEnd>0)seg(all.slice(0,sEnd+1),'#4ade80');
+    seg(all.slice(sEnd,eStart+1),'#4aa3ff');
+    if(eStart<F.length)seg(all.slice(eStart,F.length+2),'#ffb547');else seg(all.slice(F.length,F.length+2),'#4aa3ff');
+    F.forEach((f,i)=>{const big=i===0||i===F.length-1||i===sEnd||i===eStart||(F.length<40&&i%2===0)||i%Math.ceil(F.length/20)===0;
+      const m=L.circleMarker([f.lat,f.lon],{radius:2.5,color:'#cfd8e3',weight:1,fillOpacity:1});
+      m.bindTooltip(f.id+(f.via&&f.via!=='DCT'?' · '+f.via:''),{permanent:big,direction:'right',className:'maptip'});lay.push(m);});
+    if(sid&&F[sEnd])lay.push(L.marker([F[Math.max(0,sEnd-1)].lat,F[Math.max(0,sEnd-1)].lon],{icon:L.divIcon({className:'maptip maptag',html:'SID '+sid})}));
+    if(star&&F[eStart])lay.push(L.marker([F[eStart].lat,F[eStart].lon],{icon:L.divIcon({className:'maptip maptag',html:'STAR '+star})}));
+    lay.push(L.circleMarker([a.lat,a.lon],{radius:4,color:'#4aa3ff'}).bindTooltip(a.icao+' '+(S.plan.dep.rwy||''),{permanent:true,direction:'top',className:'maptip'}),
+      L.circleMarker([b.lat,b.lon],{radius:4,color:'#4aa3ff'}).bindTooltip(b.icao+' '+(S.plan.arr.rwy||''),{permanent:true,direction:'top',className:'maptip'}));
+    MAP.route=L.layerGroup(lay).addTo(MAP.map);
+    if(!SIM.ok)MAP.map.fitBounds(L.latLngBounds(all).pad(0.15));
+    return;
+  }
   const pts=[];for(let i=0;i<=40;i++){const t=i/40;pts.push(gcPoint(a,b,t));}
   MAP.route=L.layerGroup([L.polyline(pts,{color:'#4aa3ff',weight:2,dashArray:'6 6'}),
     L.circleMarker([a.lat,a.lon],{radius:4,color:'#4aa3ff'}).bindTooltip(a.icao,{permanent:true,direction:'top',className:'maptip'}),
@@ -3293,6 +3384,12 @@ function init(){
   $('s_buzz').onchange=e=>{SET.buzz=e.target.value;saveSet();};
   $('s_gpu').onchange=e=>{SET.gpu=e.target.checked;saveSet();kwKill('setting changed');KW.failed=false;if(kokoroCached())kokoroLoad().catch(()=>{});};
   $('s_ai').onchange=e=>{SET.ai=e.target.checked;saveSet();};
+  $('s_trafVol').value=SET.trafVol??0.6;$('s_trafVol').oninput=e=>{SET.trafVol=+e.target.value;saveSet();};
+  $('cl_key').value=CL.key;$('cl_key').onchange=e=>{CL.key=e.target.value.trim();saveCl();$('cl_note').textContent=CL.key?'Saved on this device.':'';};
+  $('cl_test').onclick=async()=>{CL.key=$('cl_key').value.trim();saveCl();if(!CL.key){$('cl_note').textContent='Paste a key first.';return;}
+    $('cl_note').textContent='Testing...';const t0=Date.now();
+    try{await askClaude('Reply with the single word: roger','radio check');$('cl_note').textContent=`Works. Claude answered in ${((Date.now()-t0)/1000).toFixed(1)} s.`;}
+    catch(e){$('cl_note').textContent='Did not work: '+e.message;}};
   // voices
   initLog();
   if(typeof speechSynthesis!=='undefined'){loadVoices();speechSynthesis.onvoiceschanged=()=>{loadVoices();assignVoices();voicesNote();};}
